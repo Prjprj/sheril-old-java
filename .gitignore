@@ -20,3 +20,7 @@ errata
 /php/stats/*
 /php/tour.txt
 carnet.txt
+config.properties*
+php/secure/connect.txt*
+php/tour.txt*
+/tour0/
