@@ -60,6 +60,8 @@ Priorisation : P1 (critique/sécurité) → P2 (stabilité) → P3 (maintenabili
 
 ### P1-05 — [FRONT] Corriger le XSS dans l'éditeur Quill du forum
 
+**Statut : ✅ Corrigé** (`fix/forum-stored-xss`) — liste blanche de balises (`strip_tags`) + suppression des attributs `on*=`/`javascript:` par regex, plutôt que HTMLPurifier (pas de Composer/`vendor/` dans ce projet). Exploitation confirmée manuellement avant correctif (`alert(document.cookie)` déclenché pour tout visiteur du topic).
+
 **Problème :** Dans `php/forum/view_topic.php`, le contenu de l'éditeur Quill est soumis en HTML brut : `bodyInput.value = quill.root.innerHTML`. Si le PHP de réception n'échappe pas ce contenu à l'affichage (et il ne le fait pas systématiquement), n'importe quel utilisateur peut injecter du JavaScript exécuté chez tous les lecteurs du topic.
 
 **Action :**
@@ -112,6 +114,8 @@ Conséquences directes : la console d'ordres est **inaccessible sur smartphone e
 
 ### P1-09 — [SÉCU] Contrôle d'accès brisé (IDOR) sur les endpoints d'ordres
 
+**Statut : ⚠️ Partiellement corrigé** (`fix/division-identifier-sql-injection`) — `$_GET['identifier']` casté en `intval()` dans `division.php:50`, injection SQL fermée. Le point 2 de l'action (vérification systématique de `commandant_num` en base via `get_commandant_verified()`) n'a **pas** été implémenté — reste à faire.
+
 **Problème :** Plusieurs endpoints PHP acceptent un identifiant de commandant issu de paramètres GET/POST sans vérifier que cet identifiant correspond bien à la session de l'utilisateur connecté. La session stocke `commandant_num` mais le code de certaines pages fait confiance à des paramètres extérieurs.
 
 Exemple dans `php/ordres/division.php:50` :
@@ -134,6 +138,8 @@ Plus grave : la valeur `$commandant` elle-même est lue depuis `$_SESSION['comma
 
 ### P1-10 — [SÉCU] Secret OAuth Discord hardcodé en clair dans le code source
 
+**Statut : ⚠️ Partiellement corrigé** (`fix/discord-oauth-secret-exposure`) — secret déplacé dans `php/secure/discord.php` (gitignoré), chargé via `require`. Actions manuelles restantes, non faisables depuis le code : révocation/régénération du secret sur le portail développeur Discord, purge de l'historique Git.
+
 **Problème :** `php/auth/callback.php` contient un secret client OAuth Discord hardcodé directement dans le code versionné :
 ```php
 $client_secret = "p5_42sz1lt47itNhECzt55kL3nF4S__7";
@@ -152,6 +158,8 @@ Ce secret est exposé à quiconque a accès au dépôt Git. Il permet à un atta
 ---
 
 ### P1-11 — [SÉCU] IDOR et path traversal dans `download.php` — accès aux rapports d'autres joueurs
+
+**Statut : ✅ Corrigé, portée revue** (`fix/download-path-disclosure`) — après vérification manuelle : le bug bitwise `&`/`&&` n'est pas exploitable (les deux opérandes sont déjà des booléens, résultat identique à `&&`), et l'IDOR n'existe pas (`$num` vient uniquement de `$_SESSION`, jamais d'un paramètre GET). Seule la divulgation de chemin dans le message d'erreur a été corrigée. Sévérité réévaluée HAUTE → FAIBLE dans le rapport révisé.
 
 **Problème :** `php/auth/download.php` permet à un joueur connecté de télécharger n'importe quel rapport de tour, y compris ceux des autres joueurs. Deux bugs combinés :
 
@@ -200,6 +208,8 @@ Ce secret est exposé à quiconque a accès au dépôt Git. Il permet à un atta
 
 ### P1-15 — [RGPD] Supprimer l'envoi de mots de passe en clair par email
 
+**Statut : ❌ Non traité — décision produit.** Comportement standard et intentionnel du jeu (rappel d'identifiants), pas un bug isolé ; sa correction touche l'ensemble du flux d'authentification et nécessite une concertation avec le porteur du produit avant tout changement unilatéral. Le script `php/plop.php` reste par ailleurs inerte (`die()` en ligne 2, outil d'envoi groupé manuel).
+
 **Problème :** `php/plop.php` envoie le mot de passe de l'utilisateur **en clair dans le corps d'un email** :
 ```php
 $password = $row['MOT_DE_PASSE'];
@@ -220,6 +230,8 @@ Combiné avec le stockage en clair en base (P1-01), cela crée une double exposi
 
 ### P1-13 — [DEVOPS] Corriger les permissions `0777` sur `php/live/`
 
+**Statut : ⚠️ Partiellement corrigé** (`fix/misc-critical-config`) — `chmod -R 0777` remplacé par `chmod -R 0770` (retire l'accès en écriture "autres"). Le `chown www-data:www-data` proposé n'a **pas** été appliqué : `init.sh` s'exécute dans le conteneur `engine` (image Java, pas d'utilisateur `www-data`), un `chown` par nom y échouerait silencieusement.
+
 **Problème :** `scripts/init.sh` ligne 3 exécute `chmod -R 0777 php/live/`. Cela rend le répertoire lisible, modifiable et exécutable par n'importe quel utilisateur sur le système — y compris l'utilisateur web du conteneur Apache. Un attaquant ayant accès à un upload ou à une injection de code peut écrire un fichier PHP dans ce répertoire et l'exécuter directement, obtenant ainsi un webshell.
 
 **Action :**
@@ -233,6 +245,8 @@ Combiné avec le stockage en clair en base (P1-01), cela crée une double exposi
 ---
 
 ### P1-16 — [SÉCU] Désérialisation PHP non validée dans `principal.txt` → RCE potentielle
+
+**Statut : ✅ Corrigé, portée revue** (`fix/unserialize-previous-param`) — `unserialize()` remplacé par `json_decode()`. La mention RCE via gadget chains a été retirée après vérification (aucune classe applicative, pas de Composer/`vendor/`, extensions limitées) : non applicable à cette stack. En revanche, `json_decode()` seul ne suffisait pas — une XSS réfléchie concrète a été découverte et confirmée (`alert()` déclenché) via `php/ordres/fr/choix/vendre_galactique.txt`, qui réaffichait `$_POST['v2']`/`['v3']` sans échappement ; corrigée par un cast `intval()` sur ces deux champs.
 
 **Problème :** `php/ordres/principal.txt` ligne 18 et 30 passe directement un paramètre GET dans `unserialize()` sans aucune validation :
 ```php
@@ -252,6 +266,8 @@ Un attaquant connecté avec n'importe quel compte peut soumettre un objet PHP s�
 
 ### P1-18 — [SÉCU] Injection SQL dans `elimine.txt` — divulgation de schéma et suppression arbitraire
 
+**Statut : ✅ Corrigé** (`fix/elimine-table-sql-injection`) — liste blanche sur `$table` (contre `$code_ordres`) appliquée **directement dans `elimine.txt`**, de façon autonome plutôt que via une variable `$allowed_tables` partagée depuis `principal.txt` : protège ce fichier indépendamment de l'ordre de merge avec P1-17.
+
 **Problème :** `php/ordres/elimine.txt` utilise `$table` (issu de `$_GET['table']` via `principal.txt`) dans trois requêtes SQL sans validation :
 1. `SHOW COLUMNS FROM $table` (ligne 10) — expose le schéma de n'importe quelle table de la base
 2. `DELETE FROM $table WHERE $identifierKey='$identifier' AND NUMERO='$commandant'` (ligne 20) — suppression ciblée
@@ -267,6 +283,8 @@ La protection de `$identifierKey` (validé contre `SHOW COLUMNS`) est contourné
 
 ### P1-19 — [SÉCU] Injection SQL dans `insert.txt` et `affiche.txt` — propagation du vecteur `$table`
 
+**Statut : ✅ Corrigé** (via `fix/principal-table-sql-injection`, P1-17) — confirmé qu'aucun des deux fichiers n'accède à `$_GET['table']` directement ; la validation en tête de `principal.txt` les protège intégralement.
+
 **Problème :** Le même vecteur `$table` (issu de `$_GET['table']`) se propage à deux autres fichiers inclus par `principal.txt` :
 
 - **`insert.txt` lignes 57, 76, 85, 102** : `SELECT * FROM $table` et `INSERT INTO $table(...)` — un attaquant peut insérer des ordres dans n'importe quelle table d'ordres en choisissant `$table` librement. Les valeurs (`$v0`-`$v7`) sont correctement échappées. La première valeur est toujours `$commandant` (ligne 88 : `$var_champ = "'$commandant'"`) — **impact limité au joueur courant, pas d'usurpation d'identité possible**.
@@ -279,6 +297,8 @@ La protection de `$identifierKey` (validé contre `SHOW COLUMNS`) est contourné
 ---
 
 ### P1-17 — [SÉCU] Local File Inclusion via le paramètre `$table` dans `principal.txt`
+
+**Statut : ✅ Corrigé** (`fix/principal-table-sql-injection`) — liste blanche appliquée à l'entrée du bloc (avant ligne 11, pas seulement avant la ligne 41 comme suggéré), en utilisant directement `$code_ordres` (déjà présent dans le code, vérifié : ses 62 valeurs correspondent exactement aux 62 fichiers de `php/ordres/data/`) plutôt qu'un nouveau tableau `$allowed_tables`. Ferme à la fois la LFI et l'injection SQL de la requête ligne 41 dans le même correctif.
 
 **Problème :** `php/ordres/principal.txt` utilise `$table` (issu de `$_GET['table']`) directement dans des `include` et une requête SQL :
 ```php
@@ -306,6 +326,8 @@ Bien que certaines valeurs soient vérifiées (`list_ordres`, `diviser_flotte`),
 ---
 
 ### P1-07 — [JAVA] Injection SQL côté Java dans `SessionSQL`
+
+**Statut : ⚠️ Partiellement corrigé** (`fix/misc-critical-config`) — migration `PreparedStatement` écartée pour ce correctif (changerait la signature publique de `selectionner()`/`insererLigne()`, utilisées à 3 endroits du moteur, nécessitant recompilation/re-test complet). À la place : échappement des quotes/backslash (`echapperSql()`) dans `champsTraduction2()`/`champsTraduction3()`, signature publique inchangée, compilation vérifiée (`javac`). La migration `PreparedStatement` reste recommandée en action de fond, à planifier séparément.
 
 **Problème :** `sources/zIgzAg/sql/SessionSQL.java` expose plusieurs méthodes (`champsTraduction1()` à `champsTraduction4()`) qui construisent des fragments SQL par concaténation directe de valeurs sans échappement. Ces méthodes sont appelées depuis `ReceptionOrdres` pour construire des `INSERT`/`UPDATE` à partir des paramètres d'ordres joueurs.
 
