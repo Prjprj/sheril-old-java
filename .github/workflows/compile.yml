@@ -1,4 +1,4 @@
-name: Compilation Check
+name: Build & Test
 
 on:
   pull_request:
@@ -17,5 +17,5 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Compile with Maven
-      run: mvn -B compile
+    - name: Build with Maven (compile, test, package, site)
+      run: mvn -B verify site
