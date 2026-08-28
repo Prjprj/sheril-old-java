@@ -15,9 +15,7 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
+        cache: maven
 
-    - name: Compile with javac
-      run: |
-        mkdir -p out
-        find sources -name "*.java" > sources_list.txt
-        javac -cp "libs/*" -d out @sources_list.txt
+    - name: Compile with Maven
+      run: mvn -B compile

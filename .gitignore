@@ -12,11 +12,13 @@ data/logs
 data_v1
 rapports/
 /classes/
+/target/
 /flottes_neutre.txt
-/sources/zIgzAg/jeu/oceane/TestEquilibreFinal.java
+/src/main/java/zIgzAg/jeu/oceane/TestEquilibreFinal.java
 errata
 /data/aa_inscription.sql
 /php/live/*
 /php/stats/*
 /php/tour.txt
 carnet.txt
+/dependency-reduced-pom.xml
