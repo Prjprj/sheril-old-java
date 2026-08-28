@@ -29,6 +29,9 @@ public class EnvoyerRapport {
 	}
 
 	public static void envoyer(Commandant c) {
+		// en local, on ne tente jamais l'envoi de mail
+		if (Const.IS_LOCAL) { return; }
+
 		// si on envoit pas de mail ou que c'est un tour de test, on essaye même pas
 		if((!Const.SEND_MAIL || Const.FAKE_TURN) && c.getNumero() != 1) { return; }
 

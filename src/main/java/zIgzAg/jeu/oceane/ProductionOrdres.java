@@ -1403,11 +1403,9 @@ public class ProductionOrdres {
             SessionMysql mySQL = new SessionMysql();
             Connection connection = mySQL.getConnection(Const.DATABASE_HOST, Const.DATABASE_NAME, Const.DATABASE_LOGIN, Const.DATABASE_PASSWORD);
             Statement s = connection.createStatement();
-            ResultSet r = null;
             for (String truncate : listTruncat.split(";")) {
-                r = mySQL.query(s, truncate);
+                mySQL.update(s, truncate);
             }
-            if (r != null) r.close();
             s.close();
         } catch (SQLException e) {
             System.out.println("SQLException: " + e.getMessage());

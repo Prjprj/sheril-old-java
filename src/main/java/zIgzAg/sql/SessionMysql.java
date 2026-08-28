@@ -26,7 +26,7 @@ public class SessionMysql extends SessionSQL {
 			System.exit(0);
 		}
 
-		String inter = "jdbc:mysql://" + host + "/" + base + "?useUnicode=true&characterEncoding=UTF-8";;
+		String inter = "jdbc:mysql://" + host + "/" + base + "?useUnicode=true&characterEncoding=UTF-8&useSSL=false";
 		if (login != null)
 			inter = inter + "&user=" + login + "&password=" + motDePasse;
 		try {
