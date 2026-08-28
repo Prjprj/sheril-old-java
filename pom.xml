@@ -19,27 +19,30 @@
              code charge explicitement org.gjt.mm.mysql.Driver (classe de
              compatibilité retirée à partir de mysql-connector-java 6.x), donc
              une montée au-delà de 5.1.x nécessiterait une modification du code
-             (voir doc/build.md). -->
+             (voir doc/build.md). 5.1.49 est la dernière version 5.1.x publiée
+             sur Maven Central, vérifiée conserver cette classe. -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.6</version>
+            <version>5.1.49</version>
         </dependency>
 
-        <!-- javax.mail : le code importe javax.mail.* (pas jakarta.mail.*),
-             namespace conservé volontairement. -->
+        <!-- javax.mail : le code importe javax.mail.* (pas jakarta.mail.*).
+             com.sun.mail:javax.mail est la dernière ligne d'artefacts publiée
+             sous ce namespace, avant le renommage jakarta.mail en 2.x. -->
         <dependency>
-            <groupId>javax.mail</groupId>
-            <artifactId>mail</artifactId>
-            <version>1.4.4</version>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>javax.mail</artifactId>
+            <version>1.6.2</version>
         </dependency>
 
         <!-- javax.activation : importé directement par Mail.java, retiré du
-             JDK depuis Java 11, doit être une dépendance explicite. -->
+             JDK depuis Java 11. com.sun.activation:javax.activation est le
+             dernier artefact publié sous ce namespace. -->
         <dependency>
-            <groupId>javax.activation</groupId>
-            <artifactId>activation</artifactId>
-            <version>1.1.1</version>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>javax.activation</artifactId>
+            <version>1.2.0</version>
         </dependency>
     </dependencies>
 
