@@ -31,6 +31,44 @@ les deux seules fonctions qui font le calcul de combat proprement dit — tout
 le reste dans `Combat.java` est de la logique d'ordonnancement, de rapport
 (HTML) ou d'évènements.
 
+### Schéma d'ensemble
+
+```mermaid
+flowchart TD
+    A["Combat.resolutionCombats()"] --> B["resolutionCombatsSurUneCase(case)"]
+    B --> C{"Directive de la flotte"}
+
+    C -->|"ATTAQUE_JOUEUR / PREVENTIVE / TOUTE_FLOTTES"| D["attaqueFlotte"]
+    D --> E["combatFlotteFlotte"]
+
+    C -->|"ATTAQUE_SYSTEME / PILLAGE_SYSTEME<br/>(si système présent)"| F["resolutionAttaqueSysteme<br/>(boucle sur les planètes)"]
+    C -->|"ATTAQUE_PLANETE / PILLAGE_PLANETE / ERADICATION_PLANETE<br/>(si système présent)"| G["resolutionAttaquePlanete<br/>(une planète précise)"]
+    F --> H["combatFlottePlanete"]
+    G --> H
+
+    subgraph FF["Combat flotte-flotte (§2)"]
+        E --> E1["Init : combativité, stratégies, positions de départ"]
+        E1 --> E2{"finDeTour ?"}
+        E2 -->|non| E3["Tempo → Ciblage → Mouvement → Tirs<br/>(§4.1-4.5)"]
+        E3 --> E4["Élimine les pertes, diminue la combativité"]
+        E4 --> E2
+        E2 -->|"oui (flotte à 0 vaisseau,<br/>ou plus personne de combatif)"| E5["Fin : rapports, réputation,<br/>élimination de la flotte perdante"]
+    end
+
+    subgraph FP["Combat flotte-planète (§3)"]
+        H --> H0{"Puissance de la flotte<br/>≥ seuil minimal (50) ?"}
+        H0 -->|non| H9["Retour -1 : aucun combat n'a lieu"]
+        H0 -->|oui| H1["Init : population défensive,<br/>nbTourMax figé"]
+        H1 --> H2{"finDeTour ?"}
+        H2 -->|non| H3["Défenses tirent → riposte boucliers<br/>→ milice tire → riposte population<br/>(§4.6)"]
+        H3 --> H4["Élimine vaisseaux et bâtiments détruits"]
+        H4 --> H2
+        H2 -->|"oui (population épuisée,<br/>flotte à 0 vaisseau, ou nbTourMax atteint)"| H5{"Population défensive ≤ 0 ?"}
+        H5 -->|oui| H6["Prise / pillage / éradication de la planète<br/>(perte de population plafonnée à 10%, cf. findings §6)"]
+        H5 -->|non| H7["Combat sans victoire"]
+    end
+```
+
 ### Qui peut combattre qui
 
 `Combat.peutCombattre(c1, c2)` (utilisé avant chaque affrontement) refuse le
