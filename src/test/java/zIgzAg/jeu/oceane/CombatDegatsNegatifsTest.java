@@ -1,6 +1,7 @@
 package zIgzAg.jeu.oceane;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
 import java.io.BufferedWriter;
@@ -73,6 +74,36 @@ import static org.mockito.Mockito.when;
  * puis un test de bout en bout via Combat.combatFlottePlanete montrant à la
  * fois l'apparition du nombre négatif dans le journal SherilLogger et son
  * absence des statistiques du commandant.
+ *
+ *  3. HYPOTHÈSE RÉFUTÉE — combiner des attributs de Commandant, de Heros ou
+ *     un composant "absorbeur" ne permet pas de produire des dégâts
+ *     négatifs :
+ *     - Les attributs de Heros/Gouverneur (attaque, défense, moral, vitesse,
+ *       compétences) n'entrent QUE dans le calcul de la CHANCE de toucher
+ *       (Vaisseau.reussiteTir / ConstructionPlanetaire.reussiteTir), jamais
+ *       dans le montant des dégâts d'un coup au but (fixé par l'arme :
+ *       getDommagesCoque/Bouclier/Sol, indépendant du tireur ou de la
+ *       cible). Cette chance est explicitement plancherisée à 1 via
+ *       `Univers.getTest(Math.max(1, test))` : aussi négatifs que soient les
+ *       attributs du héros, la chance de toucher ne descend jamais en
+ *       dessous de 1 (elle ne devient jamais négative elle-même), et un coup
+ *       qui touche malgré tout inflige exactement les dégâts de base de
+ *       l'arme, ni plus ni moins.
+ *     - Aucune méthode du code ne modifie d'ailleurs JAMAIS ces attributs
+ *       après la création d'un héros/gouverneur (Leader.setAttaque/
+ *       setDefense/setMoral/setVitesse existent mais ne sont appelés nulle
+ *       part dans le moteur) : dans le jeu tel qu'il tourne aujourd'hui, ces
+ *       valeurs restent d'ailleurs toujours positives ou nulles (tirées de
+ *       Univers.getInt(3) à la création).
+ *     - Le composant "absorbeur" (Vaisseau.getCapaciteAbsorbtion, utilisé
+ *       par dommagesApresAbsorbe) est encore mieux protégé : sa capacité
+ *       est calculée par un maximum qui part de 0
+ *       (PlanDeVaisseau.capaciteMaximaleCaracteristiqueSpeciale, `int retour
+ *       = 0; ... retour = Math.max(valeur, retour);`), donc même un
+ *       composant dont la donnée serait mal configurée avec une capacité
+ *       d'absorption négative ne peut jamais faire redescendre
+ *       Vaisseau.absorbeur sous 0 — contrairement aux dégâts d'arme (point
+ *       2), qui eux n'ont aucun filet de sécurité de ce type.
  */
 class CombatDegatsNegatifsTest {
 
@@ -427,5 +458,85 @@ class CombatDegatsNegatifsTest {
                             + "qui n'applique aucune garde de signe contrairement à Commandant.ajouterDegats : "
                             + "messages journalisés = " + messagesJournalises);
         }
+    }
+
+    // -----------------------------------------------------------------
+    // 3. Attributs de Commandant/Heros et composant absorbeur : réfuté
+    //    comme source de dégâts négatifs
+    // -----------------------------------------------------------------
+
+    @Test
+    void heroAvecAttaqueEtDefenseTresNegatives_neRendJamaisLesDegatsNegatifsEtPlancheLaChanceA1() throws Exception {
+        Map<String, PlanDeVaisseau> plans = new HashMap<>();
+        int dommagesCoque = 10;
+        Arme armeAttaquant = armeDeBatterie(30, 0, dommagesCoque);
+        Arme armeCible = armeDeBatterie(30, 0, 0);
+        setField(armeCible, ComposantDeVaisseau.class, "nombreDeCasesPrises", 100_000);
+        PlanDeVaisseau planAttaquant = planMonoArme("Attaquant", armeAttaquant);
+        PlanDeVaisseau planCible = planMonoArme("Cible resistante", armeCible);
+
+        try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
+            // getTest toujours vrai : on force le coup à toucher, pour
+            // observer si l'attribut négatif du héros a une influence sur le
+            // MONTANT des dégâts (il ne doit pas en avoir).
+            univers.when(() -> Univers.getTest(anyInt())).thenReturn(true);
+            univers.when(() -> Univers.getPlanDeVaisseau(anyString()))
+                    .thenAnswer(inv -> plans.get((String) inv.getArgument(0)));
+
+            Vaisseau attaquant = vaisseauSansBouclier("Attaquant-1", planAttaquant, plans, "attA");
+            Vaisseau cible = vaisseauSansBouclier("Cible-1", planCible, plans, "cibleA");
+            attaquant.preparerAuCombat(true);
+            cible.preparerAuCombat(true);
+
+            // Héros du tireur avec des attributs extrêmement défavorables —
+            // aucun chemin de jeu normal ne permet de les rendre négatifs
+            // (Leader.setAttaque/setDefense ne sont appelés nulle part dans
+            // le moteur), mais rien dans le code ne l'empêche non plus :
+            // testons donc directement le cas limite.
+            Heros heroTresFaible = new Heros("Faible", new int[0][0], 0, -1000, -1000, 0, 0, 0, 0);
+
+            int dommagesAvant = attaquant.getDommagesEffectues();
+            attaquant.tir(cible, 0, heroTresFaible, Heros.HEROS_NON_PRESENT);
+            int degatsDuTir = attaquant.getDommagesEffectues() - dommagesAvant;
+
+            ArgumentCaptor<Integer> chanceCaptee = ArgumentCaptor.forClass(Integer.class);
+            univers.verify(() -> Univers.getTest(chanceCaptee.capture()), org.mockito.Mockito.atLeastOnce());
+
+            assertTrue(degatsDuTir == dommagesCoque,
+                    "l'attaque/défense du héros ne doit influencer QUE la chance de toucher, jamais le montant "
+                            + "des dégâts d'un coup au but : attendu " + dommagesCoque + ", obtenu " + degatsDuTir);
+            assertTrue(chanceCaptee.getAllValues().stream().allMatch(c -> c >= 1),
+                    "Vaisseau.reussiteTir plancherise la chance à Math.max(1, test) : même avec un héros aux "
+                            + "attributs extrêmement négatifs, la valeur passée à Univers.getTest ne descend "
+                            + "jamais sous 1 (valeurs observées : " + chanceCaptee.getAllValues() + ")");
+        }
+    }
+
+    @Test
+    void composantAbsorbeurAvecCapaciteMalConfigureeEnNegatif_neDescendJamaisSous0() throws Exception {
+        // Même si un composant "absorbeur" avait, par erreur de données, une
+        // capacité d'absorption négative, PlanDeVaisseau.
+        // capaciteMaximaleCaracteristiqueSpeciale calcule cette capacité par
+        // un maximum qui part de 0 : contrairement aux dégâts d'arme (test
+        // de la section 2), ce mécanisme a donc déjà un filet de sécurité
+        // intégré, sans qu'aucune donnée de jeu réelle n'ait de valeur
+        // négative pour cette caractéristique (voir ListeCaracSpeciales.java
+        // : absorbI..absorbX vont tous de 1 à 25).
+        ComposantDeVaisseau absorbeurMalConfigure = new ComposantDeVaisseau(
+                "absorbXX", 0, null, 0,
+                new int[][]{{Const.COMPOSANT_CAPACITE_ABSORBTION, -50}},
+                0, 0f, null, "coque", 1);
+
+        Constructor<PlanDeVaisseau> ctor = PlanDeVaisseau.class.getDeclaredConstructor();
+        ctor.setAccessible(true);
+        PlanDeVaisseau plan = ctor.newInstance();
+        plan.setNom("Vaisseau avec absorbeur corrompu");
+        setField(plan, PlanDeVaisseau.class, "nbCases", 1);
+        setField(plan, PlanDeVaisseau.class, "composants", new String[]{"absorbXXI"});
+        setField(plan, PlanDeVaisseau.class, "composantsDeVaisseau", new ComposantDeVaisseau[]{absorbeurMalConfigure});
+
+        assertTrue(plan.getCapaciteAbsorbtion() == 0,
+                "une capacité d'absorption négative dans les données ne doit jamais se traduire par une capacité "
+                        + "effective négative : obtenu " + plan.getCapaciteAbsorbtion());
     }
 }

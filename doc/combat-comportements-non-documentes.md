@@ -287,6 +287,42 @@ raisons :
   franchir plus tôt ou plus tard ne change donc rien à ce qui est
   aujourd'hui visible en jeu.
 
+## 10. Les attributs de Commandant/Heros et le composant absorbeur ne peuvent pas produire de dégâts négatifs
+
+**Vérifié empiriquement** — `CombatDegatsNegatifsTest.
+heroAvecAttaqueEtDefenseTresNegatives_neRendJamaisLesDegatsNegatifsEtPlancheLaChanceA1`
+et `CombatDegatsNegatifsTest.
+composantAbsorbeurAvecCapaciteMalConfigureeEnNegatif_neDescendJamaisSous0`.
+
+Question posée en cours d'investigation : combiner des attributs de
+Commandant, de Heros (attaque/défense/moral/vitesse/compétences), ou un
+composant absorbeur mal configuré, peut-il produire des dégâts négatifs ?
+Non, pour deux raisons distinctes et complémentaires :
+
+- **Les attributs du héros n'entrent que dans la CHANCE de toucher, jamais
+  dans le MONTANT des dégâts.** `Vaisseau.reussiteTir` /
+  `ConstructionPlanetaire.reussiteTir` combinent attaque/défense/compétences
+  pour ajuster la probabilité de réussite d'un tir, mais le montant des
+  dégâts d'un coup au but reste toujours fixé par l'arme seule
+  (`getDommagesCoque`/`Bouclier`/`Sol`), indépendamment du tireur ou de la
+  cible. Cette chance est en outre explicitement plancherisée à 1 :
+  `Univers.getTest(Math.max(1, test))` — aussi négatifs que soient les
+  attributs du héros, la valeur passée à `Univers.getTest` ne descend
+  jamais sous 1. Et un coup réussi malgré tout inflige exactement les
+  dégâts de base de l'arme, ni plus ni moins.
+- **Aucun chemin de jeu ne rend d'ailleurs ces attributs négatifs.**
+  `Leader.setAttaque`/`setDefense`/`setMoral`/`setVitesse` existent mais ne
+  sont appelés nulle part dans le moteur — ces valeurs restent toujours
+  celles fixées à la création du héros (`Univers.getInt(3)`, donc 0 à 2).
+- **Le composant absorbeur a un filet de sécurité que les dégâts d'arme
+  n'ont pas.** `Vaisseau.getCapaciteAbsorbtion()` passe par
+  `PlanDeVaisseau.capaciteMaximaleCaracteristiqueSpeciale`, qui calcule un
+  maximum en partant de 0 (`int retour = 0; ... retour = Math.max(valeur,
+  retour);`) : même une caractéristique d'absorption négative dans les
+  données ne peut jamais faire descendre la capacité effective — et donc
+  `Vaisseau.absorbeur` — sous 0. C'est un filet de sécurité que l'ajout de
+  dégâts d'arme (finding 9) n'a pas.
+
 **Ce cas peut-il se produire en jeu normal ?** Non, pas avec le code et les
 données actuelles — vérifié en remontant toute la chaîne de construction
 d'une arme. Toutes les instances `Arme` du jeu sont créées à un seul
