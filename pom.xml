@@ -68,6 +68,25 @@
     <build>
         <finalName>sheril</finalName>
         <plugins>
+            <!-- Épinglé explicitement : sans déclaration, Maven utilise la
+                 liaison par défaut du compiler-plugin propre à CHAQUE
+                 installation de Maven. maven.compiler.release (ci-dessus)
+                 n'est compris qu'à partir du compiler-plugin 3.6 — avec une
+                 installation qui résout un binding par défaut plus ancien
+                 (ex. 3.1, encore vu avec Maven 3.6.3), la propriété est
+                 silencieusement ignorée et la compilation retombe sur le
+                 défaut historique du plugin (source/target 1.5), rejeté par
+                 un JDK moderne ("Source option 5 is no longer supported").
+                 Épingler une version récente rend le build reproductible
+                 indépendamment de la version de Maven utilisée. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-site-plugin</artifactId>
