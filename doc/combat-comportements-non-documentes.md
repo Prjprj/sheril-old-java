@@ -1,8 +1,9 @@
 # Combat : comportements non documentés
 
 Constats faits en écrivant des tests de caractérisation pour `Combat.java`
-(`src/test/java/zIgzAg/jeu/oceane/CombatFlotteFlotteTest.java` et
-`CombatFlottePlaneteTest.java`) : des règles réelles du moteur qui ne sont
+(`src/test/java/zIgzAg/jeu/oceane/CombatFlotteFlotteTest.java`,
+`CombatFlottePlaneteTest.java`, `CombatDegatsNegatifsTest.java`) : des règles
+réelles du moteur qui ne sont
 écrites nulle part ailleurs (ni commentaire, ni documentation, ni nom de
 méthode explicite). Elles ne sont pas nécessairement des bugs — ce sont des
 comportements du code **tel qu'il existe aujourd'hui**, à connaître avant de
@@ -221,3 +222,45 @@ Après un `fusionner`, modifier un tableau `int[]` récupéré via
 **aussi** le tableau correspondant de la stratégie source passée en
 argument — un piège de partage d'état auquel le constructeur de copie
 échappe totalement.
+
+## 9. Une arme de défense planétaire mal configurée peut produire des dégâts négatifs — dans le journal, pas dans les statistiques du commandant
+
+**Vérifié empiriquement** — `src/test/java/zIgzAg/jeu/oceane/
+CombatDegatsNegatifsTest.java` (investigation menée sans exemple concret,
+suite à un signalement d'utilisateur de "dégâts négatifs" en combat).
+
+`ConstructionPlanetaire.tirArme` (le tir d'une batterie ou de la milice sur
+un vaisseau) ajoute les dégâts de l'arme à son propre compteur de
+statistiques sans aucune vérification de signe :
+
+```java
+this.dommagesEffectues += dommageCoque;   // ou dommageBouc, selon bouclier ou non
+```
+
+À comparer avec `Vaisseau.effectuerDommages` (le tir d'un vaisseau sur un
+autre), qui protège la même opération par `if (degats > 0)`. Si l'arme
+d'un bâtiment de défense a une caractéristique de dégâts négative (données
+de jeu mal configurées — rien dans le code ne le détecte ni ne l'empêche),
+chaque tir touché de cette arme fait directement **baisser** ce compteur.
+`Combat.tirDefensesPlanetaires` calcule alors, pour ce tir, un delta
+"après − avant" négatif.
+
+Ce delta négatif n'atteint cependant **pas** la statistique persistée du
+commandant : `Combat.tirDefensesPlanetaires` ne fait
+`defenseur.ajouterDegats(degatsDuTir)` que si `degatsDuTir > 0` — un test
+qui échoue aussi bien pour un delta négatif que pour un délta nul, donc
+`Commandant.degatsInfligesCeTour` (utilisée en score de victoire) reste
+protégée. En revanche, la ligne `SherilLogger.log(...)` juste avant ce
+test-là affiche `degatsDuTir` **sans aucune garde** — c'est dans le journal
+de combat (`data/logs/tourX.log`) que le nombre négatif devient visible,
+sous la forme `"Dégâts: -20"`.
+
+À noter, dans la même investigation : un débordement d'entier (overflow) du
+même compteur `ConstructionPlanetaire.dommagesEffectues` — jamais
+réinitialisé sur toute la durée de vie d'un bâtiment, contrairement à
+`Vaisseau.dommagesEffectues` remis à zéro à chaque round — rend bien le
+compteur lui-même négatif une fois débordé, mais ceci a été **vérifié comme
+n'étant pas une source de dégâts négatifs visibles** : l'arithmétique
+entière Java (complément à deux) fait que le delta "après − avant" reste
+mathématiquement correct malgré un débordement, tant qu'il ne survient
+qu'une seule fois entre les deux mesures.
