@@ -199,6 +199,65 @@ class CombatDegatsNegatifsTest {
         }
     }
 
+    @Test
+    void tirsRepetesDUneBatterie_traversantLeDebordement_chaqueDeltaIndividuelResteCorrect() throws Exception {
+        // Réponse à la question : un combat plus long ou avec plus de
+        // vaisseaux (donc plus de tirs) aggrave-t-il le débordement ?
+        //
+        // Non : Combat.tirDefensesPlanetaires capture `dommagesAvant`
+        // immédiatement avant CHAQUE tir individuel, et ne compare jamais
+        // qu'un "avant" à son "après" immédiat (un seul += entre les deux
+        // mesures). Le nombre total de tirs déjà effectués — sur toute la
+        // durée de vie du bâtiment, pas seulement dans le combat en cours —
+        // n'entre pas en jeu : la propriété du complément à deux
+        // ((avant + degats) - avant == degats mod 2^32) tient pour CHAQUE
+        // mesure prise isolément, qu'elle ait lieu juste avant, pendant, ou
+        // bien après le franchissement de Integer.MAX_VALUE. Ce test tire
+        // deux douzaines de coups d'affilée sur la même batterie, à cheval
+        // sur le débordement, et vérifie que chaque delta individuel reste
+        // exact du premier au dernier coup.
+        Map<String, PlanDeVaisseau> plans = new HashMap<>();
+        int dommagesParTir = 7;
+        Arme armeBatterie = armeDeBatterie(30, dommagesParTir, dommagesParTir);
+        Arme armeCible = armeDeBatterie(30, 0, 0);
+        // Cible capable d'encaisser toute la série de tirs sans être détruite
+        // (sinon ConstructionPlanetaire.tir n'a plus aucun effet sur elle) :
+        // on donne à son unique composant une résistance largement
+        // supérieure au cumul des dégâts de la série.
+        setField(armeCible, ComposantDeVaisseau.class, "nombreDeCasesPrises", 100_000);
+        PlanDeVaisseau planCible = planMonoArme("Cible resistante", armeCible);
+
+        ConstructionPlanetaire batterie = new ConstructionPlanetaire("battXX");
+        // Départ volontairement proche du débordement, pour que la série de
+        // tirs le traverse en cours de route.
+        setField(batterie, ConstructionPlanetaire.class, "dommagesEffectues", Integer.MAX_VALUE - 50);
+
+        try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
+            univers.when(() -> Univers.getTest(anyInt())).thenReturn(true);
+            univers.when(() -> Univers.getPlanDeVaisseau(anyString()))
+                    .thenAnswer(inv -> plans.get((String) inv.getArgument(0)));
+            Batiment batimentBatterie = batimentDeBatterie("battXX", "canon");
+            univers.when(() -> Univers.getTechnologie("battXX")).thenReturn(batimentBatterie);
+            univers.when(() -> Univers.getTechnologie("canonI")).thenReturn(armeBatterie);
+
+            Vaisseau cible = vaisseauSansBouclier("Cible-1", planCible, plans, "cibleA");
+            cible.preparerAuCombat(true);
+
+            int nombreDeTirs = 24; // traverse largement le débordement (50/7 ≈ 8 tirs suffiraient)
+            for (int i = 1; i <= nombreDeTirs; i++) {
+                int dommagesAvant = batterie.getDommagesEffectues();
+                batterie.tir(cible, Gouverneur.GOUVERNEUR_NON_PRESENT, Heros.HEROS_NON_PRESENT, true);
+                int delta = batterie.getDommagesEffectues() - dommagesAvant;
+
+                assertTrue(delta == dommagesParTir,
+                        "tir n°" + i + "/" + nombreDeTirs + " : delta attendu " + dommagesParTir
+                                + ", obtenu " + delta + " (dommagesAvant=" + dommagesAvant
+                                + ", dommagesApres=" + batterie.getDommagesEffectues() + ") — "
+                                + "le nombre de tirs déjà encaissés ne doit pas affecter la mesure individuelle");
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
     // 2. Arme de défense mal configurée (dégâts négatifs en données) :
     //    confirmé comme source directe de dégâts négatifs, sans overflow

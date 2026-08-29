@@ -265,6 +265,28 @@ entière Java (complément à deux) fait que le delta "après − avant" reste
 mathématiquement correct malgré un débordement, tant qu'il ne survient
 qu'une seule fois entre les deux mesures.
 
+**Un combat plus long ou avec plus de vaisseaux aggrave-t-il ce
+débordement ?** Non — **vérifié empiriquement**
+(`CombatDegatsNegatifsTest.tirsRepetesDUneBatterie_traversantLeDebordement_chaqueDeltaIndividuelResteCorrect`,
+24 tirs consécutifs sur la même batterie encadrant le franchissement de
+`Integer.MAX_VALUE`, chaque delta individuel vérifié correct). La taille ou
+la durée d'un combat n'a aucune influence sur cette propriété, pour deux
+raisons :
+- `Combat.tirDefensesPlanetaires` capture `dommagesAvant` immédiatement
+  avant **chaque tir individuel** : il n'y a jamais qu'un seul `+=` entre
+  une mesure "avant" et sa mesure "après" correspondante, quel que soit le
+  nombre total de tirs déjà encaissés par le bâtiment (dans ce combat ou
+  dans tous les précédents) — la propriété du complément à deux tient pour
+  chaque mesure prise isolément, avant, pendant ou après un franchissement.
+- Ce qui accélère réellement l'apparition du problème, c'est le nombre
+  cumulé de tirs **réussis** reçus par un même bâtiment sur toute sa durée
+  de vie (beaucoup de combats/tours, pas la taille d'un seul combat) — plus
+  un bâtiment survit longtemps et encaisse de tirs, plus tôt son compteur
+  interne franchit `Integer.MAX_VALUE`. Mais comme établi ci-dessus, ce
+  compteur n'est actuellement lu nulle part comme une valeur absolue : le
+  franchir plus tôt ou plus tard ne change donc rien à ce qui est
+  aujourd'hui visible en jeu.
+
 **Ce cas peut-il se produire en jeu normal ?** Non, pas avec le code et les
 données actuelles — vérifié en remontant toute la chaîne de construction
 d'une arme. Toutes les instances `Arme` du jeu sont créées à un seul
