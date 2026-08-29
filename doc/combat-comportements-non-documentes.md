@@ -344,16 +344,27 @@ de `ListeCaracArmes.java` contient une erreur de signe, ou si cette donnée
 est un jour migrée vers une source éditable (base de données, fichier de
 configuration).
 
-## 11. Un coup qui détruit ou "overkill" un bâtiment est sous-comptabilisé dans les dégâts infligés de l'attaquant
+## 11. Un coup qui détruit ou "overkill" un bâtiment était sous-comptabilisé dans les dégâts infligés de l'attaquant — CORRIGÉ
 
-**Vérifié empiriquement** — `CombatDegatsNegatifsTest.
-tirSurConstruction_coupQuiDetruitLaCible_sousComptabiliseLesDegatsInfliges`
+**Statut : corrigé** sur cette branche (`src/main/java/zIgzAg/jeu/oceane/
+Vaisseau.java` et `ConstructionPlanetaire.java`). Trouvé et vérifié
+empiriquement — `CombatDegatsNegatifsTest.
+tirSurConstruction_coupQuiDetruitLaCible_comptabiliseLaStructureReellementConsommee`
 et `CombatDegatsNegatifsTest.
-tirSurConstruction_flotteDeBombardiers_ecartEntreDegatsInfligesEtEncaisses`.
-Ce n'est pas un cas de dégâts négatifs, mais un vrai bug **reproduit à
-partir d'un cas réel rapporté par l'utilisateur** (contrairement aux
-findings 9 et 10, qui nécessitent des données de jeu corrompues) — le
-premier de cette liste directement atteignable en jeu normal.
+tirSurConstruction_flotteDeBombardiers_totalInfligeEgaleStructureTotaleDetruite`
+vérifient désormais le comportement corrigé (ces deux tests vérifiaient
+auparavant le bug lui-même, avant l'application du correctif). Ce n'était
+pas un cas de dégâts négatifs, mais un vrai bug **reproduit à partir d'un
+cas réel rapporté par l'utilisateur** (contrairement aux findings 9 et 10,
+qui nécessitent des données de jeu corrompues) — le premier de cette liste
+directement atteignable en jeu normal.
+
+Le même correctif a été appliqué séparément sur la branche
+`fix/tir-sur-construction-sous-comptage-degats` (à partir de `develop`,
+correctif minimal isolé — voir `doc/fix/
+sous-comptage-degats-infliges-batiments.md` sur cette branche pour le
+rapport de détection détaillé). Ce qui suit décrit le comportement
+**avant correctif**, pour mémoire.
 
 **Le cas rapporté** : attaque d'une flotte de 26 Bombardiers Zwaia + 10
 Grands Bombardiers Standard contre une planète (2169 milices, 6 mines). Le
@@ -390,11 +401,22 @@ qui estime le total encaissé par les bâtiments détruits comme leur pleine
 valeur de structure, indépendamment du compteur de l'attaquant).
 
 Autrement dit : les deux moitiés du rapport (dégâts infligés côté
-attaquant, dégâts encaissés côté défenseur) sont calculées par **deux
-mécanismes complètement différents et non réconciliés** — l'un tronque
-systématiquement les coups fatals/surpuissants, l'autre ne le fait pas —
-d'où l'écart visible dans tout combat où des bâtiments/mines sont détruits.
-Plus le nombre de coups fatals ou de surpuissance est élevé (beaucoup de
-petites structures — ici des mines — visées par une grosse flotte de
-bombardiers), plus l'écart grandit, ce qui correspond exactement au
-scénario rapporté.
+attaquant, dégâts encaissés côté défenseur) étaient calculées par **deux
+mécanismes complètement différents et non réconciliés** — l'un tronquait
+systématiquement les coups fatals/surpuissants, l'autre non — d'où l'écart
+visible dans tout combat où des bâtiments/mines étaient détruits. Plus le
+nombre de coups fatals ou de surpuissance était élevé (beaucoup de petites
+structures — ici des mines — visées par une grosse flotte de bombardiers),
+plus l'écart grandissait, ce qui correspondait exactement au scénario
+rapporté.
+
+**Le correctif** : mesurer la structure restante *avant* d'appliquer le
+dégât plutôt qu'après (réordonnancement de deux lignes dans
+`tirSurConstruction`), plus un correctif compagnon nécessaire dans
+`ConstructionPlanetaire.getPointsDeStructureRestants` (qui ne résolvait pas
+son `Batiment` sous-jacent avant de le déréférencer — jusque-là masqué par
+l'ordre des appels, exposé par le réordonnancement). Le correctif ne fait
+pas disparaître tout écart entre "infligé" et "encaissé" (les deux valeurs
+restent calculées par deux mécanismes différents), mais élimine la
+troncature systématique des coups fatals/surpuissants, source dominante de
+l'écart observé.
