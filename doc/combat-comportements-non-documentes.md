@@ -343,3 +343,58 @@ marché), mais il ne deviendrait un risque actif que si une future entrée
 de `ListeCaracArmes.java` contient une erreur de signe, ou si cette donnée
 est un jour migrée vers une source éditable (base de données, fichier de
 configuration).
+
+## 11. Un coup qui détruit ou "overkill" un bâtiment est sous-comptabilisé dans les dégâts infligés de l'attaquant
+
+**Vérifié empiriquement** — `CombatDegatsNegatifsTest.
+tirSurConstruction_coupQuiDetruitLaCible_sousComptabiliseLesDegatsInfliges`
+et `CombatDegatsNegatifsTest.
+tirSurConstruction_flotteDeBombardiers_ecartEntreDegatsInfligesEtEncaisses`.
+Ce n'est pas un cas de dégâts négatifs, mais un vrai bug **reproduit à
+partir d'un cas réel rapporté par l'utilisateur** (contrairement aux
+findings 9 et 10, qui nécessitent des données de jeu corrompues) — le
+premier de cette liste directement atteignable en jeu normal.
+
+**Le cas rapporté** : attaque d'une flotte de 26 Bombardiers Zwaia + 10
+Grands Bombardiers Standard contre une planète (2169 milices, 6 mines). Le
+rapport synthétique indique "6 mines détruites ayant encaissé 120 dégâts"
+côté planète, mais seulement "78 dégâts infligés" côté bombardiers Zwaia —
+un écart de 42 points.
+
+**La cause** : `Vaisseau.tirSurConstruction` (un vaisseau qui bombarde un
+bâtiment/une mine) fait, dans cet ordre :
+
+```java
+cibles[index].ajouterDommages(arme.getDommagesSol());              // 1. applique le dégât à la cible
+int dommagesActuel = Math.min(arme.getDommagesSol(),
+        cibles[index].getPointsDeStructureRestants());             // 2. mesure la structure "restante"...
+dommagesEffectues += dommagesActuel;                                //    ...APRÈS que le dégât a déjà été appliqué
+```
+
+`getPointsDeStructureRestants()` (= `Math.max(0, pointsDeStructure -
+dommages)`) est lu **après** que `ajouterDommages` a déjà incrémenté le
+compteur de dégâts de la cible — au lieu d'être mesuré **avant** le coup,
+ce qui donnerait la quantité de structure réellement disponible pour
+absorber ce tir précis. Dès qu'un tir détruit sa cible ou la
+"surpuissante" (dégâts du tir supérieurs à la structure qu'il lui restait
+avant le coup), la structure restante mesurée après coup vaut 0 (ou un
+reste très réduit) : `dommagesActuel` — donc le compteur `dommagesEffectues`
+de l'attaquant, celui qui alimente le "X dégâts infligés" du rapport côté
+flotte — est tronqué, potentiellement jusqu'à 0, **même si la cible a bien
+reçu et enregistré la totalité du coup** dans son propre champ `dommages`
+(celui qui alimente le "X dégâts encaissés" du rapport côté planète,
+calculé sur une base différente — voir `Planete.
+listeEquipementsNombresDommages` et la formule de
+`Combat.ecrireDetailCombatPlanete`, `nT[1] + (-nT[0] + dT[0]) * nbCases`,
+qui estime le total encaissé par les bâtiments détruits comme leur pleine
+valeur de structure, indépendamment du compteur de l'attaquant).
+
+Autrement dit : les deux moitiés du rapport (dégâts infligés côté
+attaquant, dégâts encaissés côté défenseur) sont calculées par **deux
+mécanismes complètement différents et non réconciliés** — l'un tronque
+systématiquement les coups fatals/surpuissants, l'autre ne le fait pas —
+d'où l'écart visible dans tout combat où des bâtiments/mines sont détruits.
+Plus le nombre de coups fatals ou de surpuissance est élevé (beaucoup de
+petites structures — ici des mines — visées par une grosse flotte de
+bombardiers), plus l'écart grandit, ce qui correspond exactement au
+scénario rapporté.

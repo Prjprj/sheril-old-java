@@ -104,6 +104,37 @@ import static org.mockito.Mockito.when;
  *       d'absorption négative ne peut jamais faire redescendre
  *       Vaisseau.absorbeur sous 0 — contrairement aux dégâts d'arme (point
  *       2), qui eux n'ont aucun filet de sécurité de ce type.
+ *
+ *  4. HYPOTHÈSE CONFIRMÉE — reproduit un cas réel rapporté par l'utilisateur
+ *     : rapport synthétique d'une attaque de 26 Bombardiers Zwaia + 10
+ *     Grands Bombardiers Standard contre une planète (2169 milices, 6
+ *     mines) — "6 mines détruites ayant encaissé 120 dégâts" côté planète,
+ *     mais seulement "78 dégâts infligés" côté flotte assaillante. Ce n'est
+ *     pas un cas de dégâts négatifs, mais un SOUS-COMPTAGE des dégâts
+ *     infligés dès qu'un tir détruit ou "overkill" sa cible.
+ *
+ *     Vaisseau.tirSurConstruction (bombardement d'un bâtiment/mine par un
+ *     vaisseau) fait, dans cet ordre :
+ *     ```
+ *     cibles[index].ajouterDommages(arme.getDommagesSol());              // 1. applique le dégât
+ *     int dommagesActuel = Math.min(arme.getDommagesSol(),
+ *             cibles[index].getPointsDeStructureRestants());             // 2. mesure le "restant"... APRÈS coup
+ *     dommagesEffectues += dommagesActuel;
+ *     ```
+ *     `getPointsDeStructureRestants()` est lu APRÈS que le dégât a déjà été
+ *     appliqué à la cible (`ajouterDommages` en ligne 1), alors qu'il
+ *     faudrait mesurer la structure restante AVANT le coup pour savoir
+ *     combien de ce coup a réellement été absorbé. Résultat : dès qu'un tir
+ *     détruit sa cible (ou l'"overkill", dégâts appliqués > structure
+ *     restante), le "restant" mesuré après coup vaut 0 (ou presque), et
+ *     `dommagesActuel` — donc la statistique `dommagesEffectues` de
+ *     l'attaquant — sous-compte ce coup, potentiellement jusqu'à 0, même si
+ *     la cible a bien reçu et enregistré (dans son propre champ `dommages`,
+ *     utilisé par le rapport côté planète) la totalité du coup. C'est cet
+ *     écart qui apparaît dans le rapport de l'utilisateur : les mines
+ *     "encaissent" (estimation basée sur leur structure totale) plus que ce
+ *     que les bombardiers n'"infligent" (leur propre compteur, tronqué à
+ *     chaque coup fatal ou surpuissant).
  */
 class CombatDegatsNegatifsTest {
 
@@ -538,5 +569,133 @@ class CombatDegatsNegatifsTest {
         assertTrue(plan.getCapaciteAbsorbtion() == 0,
                 "une capacité d'absorption négative dans les données ne doit jamais se traduire par une capacité "
                         + "effective négative : obtenu " + plan.getCapaciteAbsorbtion());
+    }
+
+    // -----------------------------------------------------------------
+    // 4. Sous-comptage des dégâts infligés sur un coup fatal/surpuissant :
+    //    confirmé, reproduit le cas réel rapporté (mines/bombardiers Zwaia)
+    // -----------------------------------------------------------------
+
+    private static Arme armeBombardier(int portee, int dommagesSol) throws Exception {
+        Constructor<Arme> ctor = Arme.class.getDeclaredConstructor();
+        ctor.setAccessible(true);
+        Arme arme = ctor.newInstance();
+
+        int[] carac = new int[6];
+        carac[Const.ARME_VITESSE_DE_BASE] = 1;
+        carac[Const.ARME_DOMMAGES_BOUCLIER] = 0;
+        carac[Const.ARME_DOMMAGES_COQUE] = 0;
+        carac[Const.ARME_DOMMAGES_SOL] = dommagesSol;
+        carac[Const.ARME_PORTEE] = portee;
+
+        int[] chance = new int[10];
+        for (int i = 0; i < chance.length; i++)
+            chance[i] = 90;
+
+        setField(arme, Arme.class, "caracteristiquesArmes", carac);
+        setField(arme, Arme.class, "chanceToucher", chance);
+        setField(arme, Arme.class, "typeArme", Const.CV_ARME_CP);
+        setField(arme, ComposantDeVaisseau.class, "type", Const.CV_ARME);
+        setField(arme, ComposantDeVaisseau.class, "nombreDeCasesPrises", 1);
+
+        return arme;
+    }
+
+    @Test
+    void tirSurConstruction_coupQuiDetruitLaCible_sousComptabiliseLesDegatsInfliges() throws Exception {
+        // Reproduit à l'échelle d'un seul tir le cas rapporté : une mine
+        // (points de structure = 20, comme 120 dégâts / 6 mines détruites
+        // dans le rapport de l'utilisateur) déjà endommagée à 15/20, visée
+        // par un bombardier dont l'arme inflige 20 points de dégâts au sol
+        // — largement de quoi la détruire d'un coup ("overkill" de 15
+        // points : 15+20=35 > 20 de structure).
+        Map<String, PlanDeVaisseau> plans = new HashMap<>();
+        int pointsDeStructureMine = 20;
+        int dommagesDejaSubis = 15;
+        int dommagesDuTir = 20;
+
+        Arme armeBombardier = armeBombardier(30, dommagesDuTir);
+        PlanDeVaisseau planBombardier = planMonoArme("Bombardier", armeBombardier);
+        plans.put("bombA", planBombardier);
+
+        Batiment batimentMine = new Batiment("mineI", 0, null, 0, null, 0, 0f, null, pointsDeStructureMine, 0, null);
+        ConstructionPlanetaire mine = new ConstructionPlanetaire("mineI");
+        setField(mine, ConstructionPlanetaire.class, "dommages", dommagesDejaSubis);
+
+        try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
+            univers.when(() -> Univers.getInt(anyInt())).thenReturn(0);
+            univers.when(() -> Univers.getTest(anyInt())).thenReturn(true);
+            univers.when(() -> Univers.getPlanDeVaisseau(anyString()))
+                    .thenAnswer(inv -> plans.get((String) inv.getArgument(0)));
+            univers.when(() -> Univers.getTechnologie("mineI")).thenReturn(batimentMine);
+
+            Vaisseau bombardier = new Vaisseau("Bombardier-1", "bombA", 0);
+            bombardier.preparerAuCombat(false);
+
+            int degatsInfliges = bombardier.tirSurConstruction(
+                    new ConstructionPlanetaire[]{mine}, Heros.HEROS_NON_PRESENT, Gouverneur.GOUVERNEUR_NON_PRESENT, true);
+
+            assertTrue(mine.getDommages() == dommagesDejaSubis + dommagesDuTir,
+                    "la mine doit bien recevoir la totalité du coup dans son propre compteur de dégâts : "
+                            + "attendu " + (dommagesDejaSubis + dommagesDuTir) + ", obtenu " + mine.getDommages());
+            assertTrue(mine.estDetruit(), "la mine doit être détruite (35 > 20 points de structure)");
+
+            assertTrue(degatsInfliges < dommagesDuTir,
+                    "Vaisseau.tirSurConstruction mesure la structure restante APRÈS avoir appliqué le dégât "
+                            + "(ajouterDommages puis getPointsDeStructureRestants), au lieu de AVANT : le coup qui "
+                            + "détruit la cible est donc sous-comptabilisé dans les dégâts infligés de l'attaquant "
+                            + "(attendu < " + dommagesDuTir + ", obtenu " + degatsInfliges + ") alors même que la "
+                            + "cible a bien encaissé le coup en entier — c'est exactement l'écart \"78 infligés vs "
+                            + "120 encaissés\" du rapport utilisateur.");
+            assertTrue(degatsInfliges == 0,
+                    "dans ce cas précis (dégâts du tir > structure restante avant coup), le \"restant après coup\" "
+                            + "vaut exactement 0 : le coup fatal est donc comptabilisé comme 0 dégât infligé, "
+                            + "obtenu " + degatsInfliges);
+        }
+    }
+
+    @Test
+    void tirSurConstruction_flotteDeBombardiers_ecartEntreDegatsInfligesEtEncaisses() throws Exception {
+        // Variante à l'échelle d'une petite flotte, pour illustrer que
+        // l'écart s'accumule au fil des tirs successifs sur un même groupe
+        // de bâtiments à mesure qu'ils s'approchent de la destruction — pas
+        // seulement sur le tout dernier coup fatal.
+        Map<String, PlanDeVaisseau> plans = new HashMap<>();
+        int pointsDeStructureMine = 20;
+        int dommagesParTir = 7;
+
+        Arme armeBombardier = armeBombardier(30, dommagesParTir);
+        PlanDeVaisseau planBombardier = planMonoArme("Bombardier", armeBombardier);
+        plans.put("bombA", planBombardier);
+
+        Batiment batimentMine = new Batiment("mineI", 0, null, 0, null, 0, 0f, null, pointsDeStructureMine, 0, null);
+        ConstructionPlanetaire mine = new ConstructionPlanetaire("mineI");
+
+        try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
+            univers.when(() -> Univers.getInt(anyInt())).thenReturn(0);
+            univers.when(() -> Univers.getTest(anyInt())).thenReturn(true);
+            univers.when(() -> Univers.getPlanDeVaisseau(anyString()))
+                    .thenAnswer(inv -> plans.get((String) inv.getArgument(0)));
+            univers.when(() -> Univers.getTechnologie("mineI")).thenReturn(batimentMine);
+
+            int totalInflige = 0;
+            // 3 tirs de 7 : 7, 14, 21 points cumulés sur une mine à 20 de
+            // structure -> le 3e tir la détruit avec un surplus de 1 point.
+            for (int i = 1; i <= 3 && !mine.estDetruit(); i++) {
+                Vaisseau bombardier = new Vaisseau("Bombardier-" + i, "bombA", 0);
+                bombardier.preparerAuCombat(false);
+                totalInflige += bombardier.tirSurConstruction(
+                        new ConstructionPlanetaire[]{mine}, Heros.HEROS_NON_PRESENT, Gouverneur.GOUVERNEUR_NON_PRESENT, true);
+            }
+
+            assertTrue(mine.estDetruit(), "3 tirs de 7 doivent détruire une mine à 20 points de structure (21 > 20)");
+            assertTrue(mine.getDommages() == 3 * dommagesParTir,
+                    "la mine encaisse la totalité des 3 tirs dans son propre compteur : attendu "
+                            + (3 * dommagesParTir) + ", obtenu " + mine.getDommages());
+            assertTrue(totalInflige < 3 * dommagesParTir,
+                    "le cumul des dégâts infligés déclarés par les bombardiers doit être inférieur au cumul "
+                            + "réellement encaissé par la mine, à cause du dernier tir (surpuissant de 1 point) "
+                            + "sous-comptabilisé : attendu < " + (3 * dommagesParTir) + ", obtenu " + totalInflige);
+        }
     }
 }
