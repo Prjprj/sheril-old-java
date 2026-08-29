@@ -264,3 +264,24 @@ n'étant pas une source de dégâts négatifs visibles** : l'arithmétique
 entière Java (complément à deux) fait que le delta "après − avant" reste
 mathématiquement correct malgré un débordement, tant qu'il ne survient
 qu'une seule fois entre les deux mesures.
+
+**Ce cas peut-il se produire en jeu normal ?** Non, pas avec le code et les
+données actuelles — vérifié en remontant toute la chaîne de construction
+d'une arme. Toutes les instances `Arme` du jeu sont créées à un seul
+endroit (`ListeTechnologique.java`), à partir des tableaux `static final`
+de `ListeCaracArmes.java` (ex. `laser={10,2,1,1,8,20}`), chargés par
+`Univers.chargerDynamiquement` via réflexion sur les champs statiques de
+cette classe — aucune base de données, aucun fichier externe, aucun outil
+d'administration n'intervient : c'est figé à la compilation. Chaque entrée
+de `ListeCaracArmes.java` a des dégâts positifs ou nuls, et la montée en
+niveau (`Arme.calculCaracteristiquesArmes`, le seul autre endroit qui
+modifie ces valeurs) ne fait qu'ajouter un bonus, jamais soustraire, sur
+les indices de dégâts. Le scénario du test (`armeDeBatterie(30, 10, -20)`)
+est donc entièrement synthétique, construit par réflexion en contournant le
+constructeur normal, spécifiquement pour démontrer l'absence de garde-fou
+dans le code — pas parce que ce chemin est atteignable aujourd'hui. Le
+défaut de code reste réel et vaut la peine d'être corrigé (garde-fou bon
+marché), mais il ne deviendrait un risque actif que si une future entrée
+de `ListeCaracArmes.java` contient une erreur de signe, ou si cette donnée
+est un jour migrée vers une source éditable (base de données, fichier de
+configuration).
