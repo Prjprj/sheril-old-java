@@ -600,5 +600,152 @@ du marchandage, mais en écart avec le chiffre publié dans les règles.
 
 ---
 
-*Prochaines sections à auditer : flottes/combats, relations entre
-commandants — en attente de feu vert.*
+## 5. Relations entre les commandants
+
+Règles auditées : `rules/Mise à jour/7. Relations entre les
+commandants.md` (`rules/alliances_et_pactes.md` consulté en complément
+pour les formules d'alliance, cohérent avec la version à jour sur ce
+point).
+
+Code audité : `Alliance.java`, `Commandant.java`, `Combat.java`,
+`ReceptionOrdres.java` (`src/main/java/zIgzAg/jeu/oceane`).
+
+### 5.1 [Écart confirmé] Succession du dirigeant d'alliance : basée sur la "puissance" globale du commandant, pas sur le nombre de planètes
+
+Les règles sont précises sur le critère de remplacement automatique du
+dirigeant sortant : *"Si le dirigeant quitte l'alliance, le membre qui
+possède **le moins de planètes** prend sa place au tour suivant"*
+(anarchique), et *"le membre qui possède **le plus de planètes**"*
+(autocratique).
+
+Le code trie les membres par `Stats.trierParPuissance`, un score
+composite sans rapport avec le nombre de planètes :
+
+```java
+// Alliance.java:217-225
+SortedMap<Integer, Commandant> sm = Stats.trierParPuissance(c);
+if (a[i].estAutocratique())
+    a[i].setDirigeant(Stats.getPremier(sm).getNumero());
+if (a[i].estAnarchique())
+    a[i].setDirigeant(Stats.getDernier(sm).getNumero());
+
+// Commandant.java:550-554
+public int getPuissance() {
+    return 10 * getPuissanceFlottes() + getPuissanceSystemes()
+            + nombreTechnologiesNonPubliquesConnues() * 100
+            + getValeurTotaleLeaders() + (int) centaures;
+}
+```
+
+`getPuissance()` combine la puissance des flottes (x10), la puissance
+des systèmes, le nombre de technologies non-publiques (x100), la valeur
+des lieutenants et les centaures en compte — aucun de ces termes n'est
+le nombre de planètes possédées. Un commandant avec peu de planètes
+mais une grosse flotte ou beaucoup de technologies peut ainsi devenir
+dirigeant d'une alliance anarchique à la place d'un commandant qui a
+réellement le moins de planètes, et inversement pour l'autocratique.
+
+### 5.2 [Écart confirmé] Réputation "attaquer une planète" : -50 dans le code, -100 dans les règles
+
+Le tableau des règles (§7.5) attribue -100 de réputation pour
+*"Attaquer une planète d'un autre commandant"*, sur laquelle se greffent
+ensuite les modes pillage (-100 et -nombre d'individus éliminés) et
+éradication (-100 et -nombre de la population maximale).
+
+```java
+// Const.java:301
+public static final int REPUTATION_ATTAQUER_PLANETE = -50;
+```
+
+Cette constante unique sert de base aux trois cas dans `Combat.java` :
+
+```java
+// Combat.java:534 (attaque simple)
+c1.ajouterReputation(Const.REPUTATION_ATTAQUER_PLANETE);
+// Combat.java:554-555 (pillage)
+c1.ajouterReputation(Const.REPUTATION_ATTAQUER_PLANETE
+        - memoirePop - Math.max(0, nbPopDefensive));
+// Combat.java:572-573 (éradication)
+c1.ajouterReputation(Const.REPUTATION_ATTAQUER_PLANETE
+        - p.populationMaximaleTotale());
+```
+
+La structure de calcul (base + population perdue/max) est cohérente
+avec les règles pour les modes pillage et éradication, mais la valeur de
+base utilisée dans les trois cas est deux fois moins pénalisante que ce
+qu'annoncent les règles (-50 au lieu de -100).
+
+### 5.3 [Écart confirmé] Réputation "coloniser une planète" : +20 dans le code, +50 dans les règles
+
+```java
+// Const.java:300
+public static final int REPUTATION_COLONISER_PLANETE = 20;
+// Commandant.java:3634
+ajouterReputation(Const.REPUTATION_COLONISER_PLANETE);
+```
+
+Les règles (§7.5) annoncent +50 pour *"Coloniser une planète"*. Le malus
+de -300 pour *"Coloniser une planète qui est déjà colonisée par une
+autre race"* est en revanche correctement implémenté
+(`ajouterReputation(-300)`, cf. §3.1 de ce document) et cohérent avec la
+règle.
+
+### 5.4 [Point non vérifiable en l'état, signalé] Aucune limite de "3 ordres de mission spéciale par tour" trouvée côté code Java
+
+Les règles (§7.3) : *"À chaque tour, vous pouvez donner 3 ordres de
+mission."*
+
+`Commandant.effectuerMissionSpeciale` (`Commandant.java:3016`) traite
+chaque ordre `services_speciaux` reçu sans compteur ni limite, et
+`ReceptionOrdres.services_speciaux` (`ReceptionOrdres.java:547-550`)
+appelle cette méthode une fois par ligne d'ordre sans plafond. Recherche
+exhaustive d'un mécanisme générique de limitation du nombre d'ordres
+d'un même type par tour dans tout `src/main/java` : aucun résultat. Ceci
+fait écho à un constat similaire déjà relevé sur la limite de 999 unités
+par transfert inter-système (§2.3) : les plafonds "par tour"/"par ordre"
+annoncés dans les règles ne semblent pas appliqués côté serveur Java sur
+ce dépôt. Il n'a pas été possible de confirmer si un tel plafond existe
+ailleurs (validation du formulaire d'ordres côté PHP, ou couche non
+explorée) — signalé comme point ouvert plutôt que comme écart certain,
+conformément au principe de ne pas conclure sans vérification directe.
+
+### 5.5 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Formules de revenu des trois types d'alliance** : anarchique 100
+  centaures/tour/membre (`Const.REVENU_ALLIANCE_ANARCHIQUE = 100F`),
+  démocratique `10 × (nombreDeMembres-1)` par membre, autocratique
+  `5 × (nombreDeMembres-1)²` au seul dirigeant — les trois formules et
+  leurs bénéficiaires respectifs correspondent exactement aux règles
+  (`Alliance.java:230-247`).
+- **Seules les deux premières alliances rejointes rapportent** :
+  confirmé, condition `getPlaceAlliance(...) < 2` appliquée aux trois
+  types d'alliance.
+- **Restrictions de vote de dirigeant/exclusion selon le type
+  d'alliance et le caractère secret** : confirmées côté soumission
+  d'ordre (`Commandant.voterElectionDirigeant`,
+  `Commandant.voterExclusionCommandant`) — autocratique n'accepte aucun
+  vote de dirigeant, anarchique secrète non plus, anarchique n'accepte
+  aucun vote d'exclusion, autocratique n'accepte l'exclusion que du
+  dirigeant lui-même, démocratique exige la moitié des voix pour les
+  deux types de vote.
+- **Signature d'un pacte de non-agression conditionnée à un ordre des
+  deux commandants le même tour** : confirmé,
+  `ReceptionOrdres.signer_pacte` vérifie l'existence d'un ordre
+  symétrique de l'autre commandant avant d'enregistrer le pacte
+  (`ReceptionOrdres.java:468-477`) ; rupture unilatérale possible à tout
+  moment (`Commandant.dechirerPacteDeNonAgression`).
+- **Seuils de statut de réputation** (Sanguinaire < -10000, Pirate
+  < -5000, Hors-la-loi < -1000, Neutre < 1000, Honnête < 5000, Respecté
+  au-delà) : confirmés, `Commandant.getStatutReputationIndex()`.
+- **Pas de perte de réputation en attaquant un commandant Sanguinaire ou
+  Pirate** : confirmé, la pénalité de réputation dans `Combat.java`
+  n'est appliquée que si `c2.getStatutReputationIndex() >= 2`, c'est-à-dire
+  si le défenseur n'est ni Sanguinaire (indice 0) ni Pirate (indice 1).
+- **Signature de pacte +25 / rupture de pacte -100 de réputation** :
+  confirmés (`Const.REPUTATION_SIGNATURE_DE_PACTE = 25`,
+  `Const.REPUTATION_RUPTURE_DE_PACTE = -100`).
+
+---
+
+*Prochaines sections à auditer : flottes/combats — en attente de feu
+vert.*
