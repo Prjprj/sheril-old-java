@@ -747,5 +747,135 @@ conformément au principe de ne pas conclure sans vérification directe.
 
 ---
 
-*Prochaines sections à auditer : flottes/combats — en attente de feu
-vert.*
+## 6. Flottes et combats
+
+Règles auditées : `rules/Mise à jour/4. Les flottes.md` et
+`rules/Mise à jour/5. Combats.md`.
+
+Code audité : `Flotte.java`, `Vaisseau.java`, `PlanDeVaisseau.java`,
+`Commandant.java`, `Combat.java`, `Systeme.java`, `Const.java`
+(`src/main/java/zIgzAg/jeu/oceane`).
+
+*Ce domaine avait déjà fait l'objet d'investigations ciblées lors de
+sessions précédentes (bugs de dommages sur constructions/boucliers,
+documentées sur d'autres branches dans `doc/combat-algorithme.md` et
+`doc/combat-comportements-non-documentes.md`, absentes de
+`build/maven-migration`). L'audit ci-dessous est une nouvelle passe,
+indépendante de ces investigations, focalisée sur la conformité aux
+règles publiées plutôt que sur la recherche de bugs runtime.*
+
+### 6.1 [Écart confirmé, sévère] Entretien d'une flotte : divisé par 20 (voire 60 en garnison) au lieu de 10 (20 en garnison), plus un forfait fixe non documenté
+
+Les règles (`Mise à jour/4. Les flottes.md`, cohérent avec l'ancien
+`rules/constructions.md` §4.1.3.2) : *"Le coût d'entretien d'une flotte
+est égal au coût de construction divisé par 10. L'entretien de vos
+flottes qui stationnent au-dessus de vos systèmes ne coûte que la
+moitié"* — soit valeur/20 pour une flotte en garnison.
+
+Le code applique un diviseur différent à chaque étape :
+
+```java
+// Flotte.java:562-572
+public float getEntretien(Heros h, boolean carburant) {
+    float retour = getValeur() / 20F;      // déjà /20, pas /10
+    if (estEnGarnison())
+        retour = retour / 3F;              // garnison : /3, pas /2
+    if (carburant)
+        retour = retour / 2F;              // facteur non documenté
+    if (h != null)
+        retour = retour - (20 * retour * h.getNiveauCompetence(
+                Const.COMPETENCE_LEADER_ENTRETIEN_FLOTTE)) / 100F;
+    return retour + Const.BASE_ENTRETIEN_FLOTTE;   // +20 non documenté
+}
+```
+
+Conséquences chiffrées : une flotte normale (hors garnison) coûte déjà
+moitié moins d'entretien que prévu par les règles (valeur/20 au lieu de
+valeur/10). Une flotte en garnison coûte valeur/60 au lieu de valeur/20
+annoncé — trois fois moins cher que prévu, pas juste "la moitié" du cas
+normal. S'y ajoutent deux éléments totalement absents des règles : un
+facteur `carburant` qui divise encore par 2 dans certains cas, et un
+forfait fixe (`Const.BASE_ENTRETIEN_FLOTTE = 20`) ajouté systématiquement
+à chaque flotte, quelle que soit sa valeur.
+
+### 6.2 [Écart confirmé] Fusion de flottes : la directive résultante est choisie par le joueur, pas automatiquement héritée de la flotte de plus petit numéro
+
+Les règles (§4.1) : *"la directive de la flotte sera celle qui a le
+plus petit numéro"* — la fusion ne devrait donc pas nécessiter de
+préciser de directive, celle-ci étant héritée automatiquement.
+
+L'ordre de fusion (`fusionner_flotte`) prend pourtant une directive
+explicite en paramètre, appliquée sans tenir compte de celle des deux
+flottes d'origine :
+
+```java
+// ReceptionOrdres.java:650-653
+public void fusionner_flotte(String[] o) {
+    int[] d = Flotte.nombreDonneDirective(tInt(o[2]));
+    c[iC].fusionnerFlotte(tInt(o[0]), tInt(o[1]), d[0], d[1]);
+}
+
+// Commandant.java:3507-3508
+Flotte f3 = f1.fusion(f2);
+f3.setDirectiveComplete(directive, directivePrecision);
+```
+
+Le choix du numéro de flotte survivant (le plus petit) est en revanche
+correctement implémenté (`Commandant.java:3493-3497`, permutation pour
+garantir que `numFlotte1` est toujours le plus petit). Seul l'héritage
+automatique de la directive n'existe pas : le joueur doit — et peut —
+spécifier explicitement la directive voulue à chaque fusion, ce qui
+dépasse ce que les règles décrivent (mais reste cohérent avec elles tant
+que le joueur choisit de fait la directive de la flotte de plus petit
+numéro).
+
+### 6.3 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Table des niveaux de puissance d'une flotte** (0 "insignifiante" à
+  10 "inimaginable") : confirmée exhaustivement par calcul des onze
+  seuils. `Vaisseau.retournerNiveauPuissance` utilise les seuils
+  `{0,1,2,4,8,20,40,80,200,400,720} × Const.BASE_NIVEAU_PUISSANCE (25)`,
+  soit 0, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 18000 — les
+  onze tranches obtenues correspondent exactement au tableau des règles.
+- **Formule de puissance d'un vaisseau** : `ForceSpatiale +
+  ForcePlanetaire / 2` (`PlanDeVaisseau.java:720-722`), conforme à la
+  formule donnée en §5.2 des règles de combat (*"Puissance spatiale +
+  Puissance planétaire/2"*).
+- **Seuil minimal de puissance 50 pour engager un combat planétaire** :
+  confirmé, `Const.PUISSANCE_ATTAQUE_PLANETAIRE_MINIMALE = 50`, appliqué
+  comme condition bloquante dans `Combat.java:400-407`.
+- **Bouclier de type I pare 2 tirs** : confirmé,
+  `ListeCaracSpeciales.bouclierI` = capacité 2.
+- **Réparation par chantier naval** : capacité de base de "chantierI"
+  = 20 points de structure (`ListeCaracSpeciales.chantierI`, conforme à
+  *"un chantier naval permet de réparer 20 points de structure"*), coût
+  de 0,5 centaure par point réparé (`Const.COUT_REPARATION_VAISSEAU =
+  0.5F`), et réparation automatique des bâtiments planétaires de 5
+  points par tour (`Const.POINTS_REPARATION_BATIMENT = 5`) — tous
+  conformes.
+- **Combativité d'un vaisseau** : `5 + niveau de moral de l'équipage +
+  moral modifié du héros` (`Vaisseau.calculeCombativite`,
+  `Vaisseau.java:231-233`, avec un objet nul `Heros.HEROS_NON_PRESENT`
+  en l'absence de héros pour éviter une erreur), décrémentée de 1 à
+  chaque fin de tour de combat (`Vaisseau.diminuerCombativite`) —
+  conforme à §5.1.
+
+### 6.4 Points non couverts par cette passe
+
+Ce domaine est large (résolution détaillée du tir, stratégies de
+combat, agressivité et seuils de fuite, résolution du combat
+planétaire/stratosphérique) et n'a pas pu être audité exhaustivement
+dans le temps imparti. Les points suivants restent à vérifier lors d'une
+prochaine passe si elle est souhaitée : seuils de fuite selon
+l'agressivité (x2/x4/x8 de puissance adverse), répartition
+stratosphère/surface selon l'agressivité, ordre de tir en combat
+planétaire (batteries → forces stratosphériques → milice → surface),
+mécanique des 10 miliciens = 1 laser de type I, batterie de défense =
+50 armes du bâtiment, 1% de chance d'explosion moteur détruit.
+
+---
+
+*Toutes les sections initialement prévues (technologies, constructions,
+population, lieutenants, relations entre commandants, flottes/combats)
+ont été auditées au moins une fois. Les points non couverts listés en
+§6.4 restent disponibles pour une passe complémentaire sur demande.*
