@@ -151,8 +151,8 @@ public abstract class SessionSQL {
 		return retour.toString();
 	}
 
-	// Ã©chappe les quotes et backslash avant interpolation dans une chaÃ®ne SQL
-	// litÃ©rale (mÃªme principe que mysql_real_escape_string) --->
+	// échappe les quotes et backslash avant interpolation dans une chaîne SQL
+	// litérale (même principe que mysql_real_escape_string) --->
 	private String echapperSql(String v) {
 		if (v == null)
 			return "";
