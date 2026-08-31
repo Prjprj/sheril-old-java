@@ -5,11 +5,13 @@ import org.mockito.MockedStatic;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockStatic;
 
@@ -140,6 +142,93 @@ class BouclierDepassementCapaciteTest {
                             + "pas vers un nouvel empilement sur ce même bouclier) — pas d'accumulation illimitée "
                             + "possible contrairement au cas des mines corrigé dans doc/fix/plafonnement-dommages-"
                             + "constructions-planetaires.md");
+        }
+    }
+
+    private static Arme armeBouclierEtCoque(int dommagesBouclier, int dommagesCoque) throws Exception {
+        Constructor<Arme> ctorArme = Arme.class.getDeclaredConstructor();
+        ctorArme.setAccessible(true);
+        Arme arme = ctorArme.newInstance();
+        int[] carac = new int[6];
+        carac[Const.ARME_VITESSE_DE_BASE] = 1;
+        carac[Const.ARME_DOMMAGES_BOUCLIER] = dommagesBouclier;
+        carac[Const.ARME_DOMMAGES_COQUE] = dommagesCoque;
+        carac[Const.ARME_DOMMAGES_SOL] = 0;
+        carac[Const.ARME_PORTEE] = 30;
+        int[] chance = new int[10];
+        for (int i = 0; i < chance.length; i++) chance[i] = 90;
+        setField(arme, Arme.class, "caracteristiquesArmes", carac);
+        setField(arme, Arme.class, "chanceToucher", chance);
+        setField(arme, Arme.class, "typeArme", Const.CV_ARME_CS);
+        setField(arme, ComposantDeVaisseau.class, "type", Const.CV_ARME);
+        setField(arme, ComposantDeVaisseau.class, "nombreDeCasesPrises", 1);
+        return arme;
+    }
+
+    @Test
+    void coupQuiSatureLeBouclier_nAppliqueAucunDegatDeCoqueEnSpillover() throws Exception {
+        // Vérifie l'implication soulignée par l'utilisateur : le coup qui sature
+        // (ou "détruit") le bouclier est intégralement absorbé par celui-ci — le
+        // if/else de Vaisseau.effectuerDommages est strictement exclusif, il
+        // n'existe aucun chemin qui répartit un même coup entre bouclier et
+        // coque. La coque doit rester totalement intacte après ce coup, quel que
+        // soit l'écart entre le dégât brut de l'arme (30) et la capacité
+        // résiduelle du bouclier (5).
+        int niveauBouclier = 5;
+        int dommagesBouclierDuTir = 30;
+        int dommagesCoqueDeLaMemeArme = 15; // ne doit JAMAIS s'appliquer sur ce coup
+
+        int[][] caracS = new int[][]{{Const.COMPOSANT_CAPACITE_BOUCLIER_MAGNETIQUE, niveauBouclier}};
+        ComposantDeVaisseau bouclier = new ComposantDeVaisseau(
+                "boucI", 0, null, 0, caracS, 0, 0f, null, "bouclier", 1);
+
+        Constructor<PlanDeVaisseau> ctorPlanCible = PlanDeVaisseau.class.getDeclaredConstructor();
+        ctorPlanCible.setAccessible(true);
+        PlanDeVaisseau planCible = ctorPlanCible.newInstance();
+        planCible.setNom("CibleBlindeeSpillover");
+        setField(planCible, PlanDeVaisseau.class, "nbCases", 1);
+        setField(planCible, PlanDeVaisseau.class, "composants", new String[]{"boucI"});
+        setField(planCible, PlanDeVaisseau.class, "composantsDeVaisseau", new ComposantDeVaisseau[]{bouclier});
+
+        Arme arme = armeBouclierEtCoque(dommagesBouclierDuTir, dommagesCoqueDeLaMemeArme);
+        Constructor<PlanDeVaisseau> ctorPlanAtt = PlanDeVaisseau.class.getDeclaredConstructor();
+        ctorPlanAtt.setAccessible(true);
+        PlanDeVaisseau planAttaquantReel = ctorPlanAtt.newInstance();
+        planAttaquantReel.setNom("AttaquantSpillover");
+        setField(planAttaquantReel, PlanDeVaisseau.class, "nbCases", 1);
+        setField(planAttaquantReel, PlanDeVaisseau.class, "composants", new String[]{"armeI"});
+        setField(planAttaquantReel, PlanDeVaisseau.class, "composantsDeVaisseau", new ComposantDeVaisseau[]{arme});
+
+        Map<String, PlanDeVaisseau> plans = new HashMap<>();
+        plans.put("cibleA", planCible);
+        plans.put("attA", planAttaquantReel);
+
+        try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
+            univers.when(() -> Univers.getPlanDeVaisseau(anyString()))
+                    .thenAnswer(inv -> plans.get((String) inv.getArgument(0)));
+            univers.when(() -> Univers.getInt(anyInt())).thenReturn(0);
+
+            Vaisseau cible = new Vaisseau("Cible-3", "cibleA", 0);
+            cible.preparerAuCombat(false);
+
+            Vaisseau attaquant = new Vaisseau("Attaquant-1", "attA", 0);
+            attaquant.preparerAuCombat(true);
+
+            Method effectuerDommages = Vaisseau.class.getDeclaredMethod(
+                    "effectuerDommages", Vaisseau.class, Arme.class, Heros.class, Heros.class);
+            effectuerDommages.setAccessible(true);
+            effectuerDommages.invoke(attaquant, cible, arme, Heros.HEROS_NON_PRESENT, Heros.HEROS_NON_PRESENT);
+
+            int[] boucliersApres = getField(cible, Vaisseau.class, "boucliers");
+            assertEquals(dommagesBouclierDuTir, boucliersApres[0],
+                    "le bouclier a bien encaissé la totalité du coup, dépassant son niveau (" + niveauBouclier + ")");
+
+            assertEquals(0, cible.nombreTotalPointsDeDommage(),
+                    "aucun dégât de coque ne doit avoir été appliqué : le coup qui sature le bouclier est "
+                            + "intégralement absorbé par celui-ci (branchement if/else exclusif dans "
+                            + "Vaisseau.effectuerDommages), il n'y a pas de répartition partielle même quand "
+                            + "les dégâts bruts (" + dommagesBouclierDuTir + ") dépassent largement la capacité "
+                            + "résiduelle du bouclier (" + niveauBouclier + ")");
         }
     }
 }

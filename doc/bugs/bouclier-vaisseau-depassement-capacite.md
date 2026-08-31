@@ -1,5 +1,12 @@
 # [CONFIRMÉ, NON CORRIGÉ] Le compteur de dégâts d'un bouclier de vaisseau n'est pas plafonné à son niveau
 
+**Précision importante (confirmée par test, §1 bis) : sur le coup qui sature
+le bouclier, l'intégralité du dégât est absorbée par celui-ci — aucun
+dégât de coque ne s'applique en "débordement", quel que soit l'écart entre
+le dégât brut de l'arme et la capacité réellement restante du bouclier. Ce
+n'est pas qu'un compteur affiche un chiffre incohérent : le vaisseau est
+concrètement protégé à 100 % sur ce coup précis.**
+
 **Statut : cause confirmée empiriquement par test (voir §3). Correctif non
 appliqué, sur demande explicite de l'utilisateur** (même principe que pour
 les cas précédents : analyse et vérification d'abord, correctif seulement si
@@ -60,6 +67,41 @@ vaisseau-contre-vaisseau, `ConstructionPlanetaire.tirArme` pour les
 défenses planétaires visant la flotte) appellent systématiquement cette
 méthode juste avant chaque tir individuel, pas une seule fois par round.
 
+## 2 bis. Le coup qui sature le bouclier est intégralement absorbé, sans débordement sur la coque
+
+`Vaisseau.effectuerDommages` (le point d'entrée réel qui applique un coup à
+une cible) est un `if`/`else` strictement exclusif :
+
+```java
+private void effectuerDommages(Vaisseau cible, Arme a, Heros h1, Heros h2) {
+    int degats;
+    int b = cible.getNumeroBouclierValide();
+    if (b != -1) {
+        cible.ajouterDommagesBouclier(b, a.getDommagesBouclier());   // TOUT le dégât bouclier ici
+        ...
+    } else {
+        degats = cible.dommagesApresAbsorbe(a.getDommagesCoque());   // sinon TOUT sur la coque
+        ...
+    }
+}
+```
+
+Il n'existe **aucun chemin de code qui répartit un même coup entre bouclier
+et coque**. Tant qu'un bouclier valide est proposé par
+`getNumeroBouclierValide()` (c'est-à-dire tant qu'il n'était pas *déjà*
+saturé avant ce coup), la totalité du dégât de bouclier de l'arme est
+appliquée à ce bouclier — y compris sur le coup qui le fait dépasser (ou
+exploser très largement) son niveau. La coque n'est jamais touchée par ce
+coup-là, quel que soit l'écart entre le dégât réel de l'arme et la capacité
+résiduelle du bouclier.
+
+**Implication concrète : sur le tour où le bouclier est saturé/détruit, ce
+coup précis est intégralement absorbé — le vaisseau ne prend aucun dégât de
+coque de ce coup, même si le bouclier n'avait qu'une capacité résiduelle
+infime face à un coup bien plus puissant.** C'est un effet de bord
+favorable au défenseur (protection totale sur ce coup précis), pas
+seulement un compteur interne incohérent.
+
 **Conséquence : le dépassement est borné à, au plus, les dégâts bruts d'UN
 SEUL coup** — pas une accumulation illimitée sur toute une salve comme pour
 les mines. Une fois un bouclier saturé (même dépassé), le tir suivant est
@@ -91,6 +133,22 @@ sur un vaisseau à un seul bouclier déjà saturé (30 > 5), un second appel à
 empilement supplémentaire sur ce même bouclier n'est possible : un tir
 suivant serait routé ailleurs (autre bouclier, ou coque), pas vers une
 nouvelle accumulation sur le compteur déjà dépassé.
+
+**Test 3** (`coupQuiSatureLeBouclier_nAppliqueAucunDegatDeCoqueEnSpillover`) :
+appel direct de `Vaisseau.effectuerDommages` (via réflexion, méthode privée
+— seul le point d'entrée est atteint par réflexion, aucun état de dégâts
+n'est forcé) avec une arme infligeant 30 points de dégâts de bouclier ET 15
+points de dégâts de coque, sur une cible dont le bouclier n'a que 5 points
+de niveau. Résultat mesuré :
+
+```
+boucliers[0] après le coup = 30   (le bouclier absorbe tout, dépasse son niveau de 5)
+nombreTotalPointsDeDommage() de la cible = 0   (AUCUN dégât de coque appliqué)
+```
+
+Confirme précisément l'implication soulevée en tête de document : le coup
+qui sature le bouclier ne laisse rien "déborder" vers la coque, quelle que
+soit l'ampleur du dépassement.
 
 Suite complète du projet : 41/41 tests passent avec ce nouveau fichier de
 test ajouté (aucun correctif de production appliqué).
