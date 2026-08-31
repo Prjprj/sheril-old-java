@@ -136,6 +136,152 @@ absent des règles publiées.
 
 ---
 
-*Prochaines sections à auditer : constructions, flottes/combats,
-population, lieutenants, relations entre commandants — en attente de
-feu vert.*
+## 2. Constructions
+
+Règles auditées : `rules/constructions.md` et
+`rules/Mise à jour/3. Constructions.md`.
+
+Code audité : `Construction.java`, `Possession.java`, `Planete.java`,
+`Systeme.java`, `Commandant.java`
+(`src/main/java/zIgzAg/jeu/oceane`).
+
+### 2.1 [Écart confirmé] Mise au rebut : 100% du minerai récupéré dans le code, 50% dans les règles
+
+Les règles (§4.2.2 de `constructions.md`) sont explicites : *"Si vous
+possédez une usine de retraitement de minerai sur la planète où vous
+voulez détruire du matériel, vous récupérez automatiquement **la
+moitié** du minerai qui avait été consommé lors de la construction du
+bâtiment."*
+
+Le code (`Planete.java`, méthode `recyclerMateriel`, appelée depuis
+`Commandant.detruireBatiments`) recrédite l'intégralité du minerai
+consommé, pas la moitié :
+
+```java
+// Planete.java:947-953
+public int recyclerMateriel(Batiment b, int nombre) {
+    int nbElimine = eliminerBatiment(b, nombre).getNombreObjets();
+    if (nbElimine > 0)
+        if (contientUniteDeRecyclage())
+            ajouterMinerai(b.getMineraiNecessaire() * nbElimine);
+    return nbElimine;
+}
+```
+
+`b.getMineraiNecessaire() * nbElimine` est le coût minerai total des
+bâtiments détruits, sans aucune division par 2. `contientUniteDeRecyclage()`
+vérifie bien la présence du bâtiment "retraiteI" (capacité spéciale
+`BATIMENT_CAPACITE_RECYCLAGE_MINERAI`, `ListeCaracSpeciales.java:173`),
+donc la condition d'activation est correcte — seul le taux de
+récupération est faux (100% au lieu de 50%).
+
+### 2.2 [Comportement non documenté] Détruire un bâtiment exige la technologie "gestplaI", absente des règles
+
+`Commandant.detruireBatiments` refuse la démolition si le commandant ne
+connaît pas la technologie `gestplaI` :
+
+```java
+// Commandant.java:2931-2933
+if (!estTechnologieConnue("gestplaI"))
+    return Univers.ajouterErreur(getNomNumeroHtml(),
+            "ER_COMMANDANT_DETRUIRE_BATIMENT_0002");
+```
+
+Ni `constructions.md` §4.2.2 ("Mise au rebut de matériel") ni la version
+à jour ne mentionnent de prérequis technologique pour démolir un
+bâtiment — les règles présentent la mise au rebut comme une option
+toujours disponible pour alléger ses coûts d'entretien.
+
+### 2.3 [Écart confirmé] Aucune limite de 999 unités appliquée aux transferts inter-systèmes
+
+Les règles (`constructions.md` §4.2.3 et `Mise à jour/3. Constructions.md`
+§3.3) précisent : *"Il est possible de transférer un maximum de 999
+unités par transfert inter-système."*
+
+Recherche de cette limite dans le code (`Commandant.transfererEntreSysteme`,
+`ObjetTransporte`/`ObjetSimpleTransporte`/`ObjetComplexeTransporte`) :
+**aucune limite numérique de ce type n'existe**. La seule borne
+appliquée à un transfert de marchandise est le stock disponible sur la
+planète d'origine :
+
+```java
+// Commandant.java:3241-3248
+int present = p1.getQuantiteMarchandise(Utile.numeroMarchandise(code));
+...
+int nb2 = Math.min(present, nb);
+```
+
+Rien de comparable n'encadre `nb` pour un transfert de bâtiments. Un
+commandant peut donc aujourd'hui transférer plus de 999 unités en un
+seul ordre, contrairement à ce qu'annoncent les règles. Le nombre
+*maximal de transferts par tour* (dépendant du nombre de systèmes
+possédés, `getNombreMaximalDeTransfertEntreSysteme()`) est bien lui
+implémenté — c'est uniquement le plafond de 999 unités *par transfert*
+qui est absent.
+
+### 2.4 [Incohérence entre les deux versions des règles, pas un défaut du code] Coût de conception d'un plan de vaisseau : 5x dans l'ancien fichier, 10x dans la version à jour — le code applique 10x
+
+`rules/constructions.md` §4.1.3.2 (fichier le plus ancien, non retouché
+depuis) : *"Ce coût est égal à **cinq** fois le coût de construction du
+vaisseau."*
+`rules/Mise à jour/3. Constructions.md` §3.5 (version à jour) : *"Il est
+égal à **10 fois** le coût du vaisseau."*
+
+Le code applique un facteur 10 :
+
+```java
+// Const.java:213
+public static final int MODIFICATEUR_MULTIPLICATEUR_CREATION = 10;
+// Commandant.java:3821-3822, 3828-3829
+if (centaures < p.getPrix() * Const.MODIFICATEUR_MULTIPLICATEUR_CREATION)
+    ...
+modifierBudget(Const.BUDGET_COMMANDANT_CREATION_PLAN,
+        -p.getPrix() * Const.MODIFICATEUR_MULTIPLICATEUR_CREATION);
+```
+
+Le code est donc cohérent avec la version à jour des règles — ce n'est
+pas un écart de comportement, mais un signal que `rules/constructions.md`
+est un document obsolète qu'il vaudrait la peine de retirer ou de
+marquer comme périmé pour éviter toute confusion future (le même
+document contient aussi une phrase sur "le coût d'entretien... équivalent
+au coût de construction divisé par 10" qui n'apparaît dans aucune des
+deux versions consultées côté flottes — à revérifier lors de l'audit du
+chapitre flottes/combats).
+
+### 2.5 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Attribution round-robin d'un point de construction par ligne de
+  construction en attente** : confirmé, `Possession.resolutionConstructions`
+  distribue le potentiel de points un par un à chaque construction en
+  cours tant qu'il en reste (`Possession.java:442-453`), reproduisant
+  exactement l'exemple chiffré de `constructions.md` §4.3 (mines, poste
+  commercial, chasseur).
+- **Formule de production de minerai selon le nombre de mines** :
+  confirmée avec l'exemple donné (`Planete.calculeRevenuMinerai`,
+  `Planete.java:517-529`) — testé par calcul sur les valeurs de l'exemple
+  de `Mise à jour/3. Constructions.md` §3.1 (valeur de base 3 → 3, 5, 6
+  minerais pour 1, 2, 3 mines), cohérent avec le fait que chaque mine de
+  base (`mineI`) apporte une capacité d'extraction de 1
+  (`ListeCaracSpeciales.java:167`).
+- **Bonus de stock de marchandises (§3.2 de la mise à jour)**, vérifiés
+  pour les valeurs numériques suivantes : Robots +5 points de
+  construction (`Systeme.java:861-862`), Articles de luxe +10% sur les
+  revenus (`Systeme.java:646-647`), Métaux précieux +5% sur les revenus
+  (`Systeme.java:648-649`), Pièces industrielles -10% d'entretien des
+  bâtiments (`Systeme.java:668-669`) — tous conformes au tableau des
+  règles.
+- **Nécessité d'un chantier naval pour achever la construction d'un
+  vaisseau** : confirmée, mais appliquée seulement à la *résolution* de
+  la construction (`Possession.java:535`, capacité spéciale
+  `BATIMENT_CAPACITE_PRODUCTION_VAISSEAU`) et non à la mise en chantier
+  elle-même (`Commandant.mettreEnChantier` ne vérifie pas la présence
+  d'un chantier naval avant d'accepter l'ordre). Les règles ne précisent
+  pas à quel moment la condition doit être vérifiée ; ce n'est donc pas
+  classé comme écart, mais à garder en tête si un futur signalement
+  porte sur des points de construction "gaspillés" sur un système sans
+  chantier naval.
+
+---
+
+*Prochaines sections à auditer : flottes/combats, population,
+lieutenants, relations entre commandants — en attente de feu vert.*
