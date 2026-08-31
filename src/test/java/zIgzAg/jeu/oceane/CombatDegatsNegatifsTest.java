@@ -142,6 +142,33 @@ import static org.mockito.Mockito.when;
  *     Les deux tests ci-dessous vérifient maintenant le comportement
  *     attendu après correctif : `dommagesActuel` est plafonné à ce qu'il
  *     restait réellement à détruire, jamais tronqué à 0 sur un coup fatal.
+ *
+ *  5. HYPOTHÈSE CONFIRMÉE, PUIS CORRIGÉE — signalement distinct sur un
+ *     rapport de combat plus détaillé exécuté par le dépôt amont (colonnes
+ *     "Dommages persistants avant/après", absentes de ce dépôt), montrant un
+ *     affichage `(+-263)` au lieu de `(-263)` sur une ligne "Mine", avec un
+ *     total "persistant avant" de 283 pour seulement 3 mines de 20 points de
+ *     structure (plafond théorique 60 — voir
+ *     `doc/bugs/dommages-persistants-mines-plafond-manquant.md` pour le
+ *     détail des 3 rapports réels et le calcul algébrique).
+ *
+ *     `ConstructionPlanetaire.ajouterDommages` n'appliquait aucun plafond :
+ *     `dommages = dommages + nb`, sans jamais borner à la structure du
+ *     bâtiment. Combiné au fait que `Combat.tirAirSol` construit la liste
+ *     des cibles une seule fois en tête de round (purge des bâtiments
+ *     détruits différée à la fin de la salve, voir
+ *     `doc/fix/plafonnement-dommages-constructions-planetaires.md` §2.2 —
+ *     ce mécanisme de ciblage n'est PAS modifié par ce correctif), un
+ *     bâtiment déjà détruit tôt dans un round continuait d'absorber les
+ *     tirs suivants du même round, sans limite.
+ *
+ *     CORRIGÉ : `ConstructionPlanetaire.ajouterDommages` plafonne désormais
+ *     `dommages` à `batiment.getPointsDeStructure()`. Vérifié avec une
+ *     flotte de 26 bombardiers tirant en un round sur 3 mines : 208 points
+ *     cumulés (plafond théorique 60) avant correctif, 20 après. Voir
+ *     `OverkillEnUnRoundTest` ci-dessous pour la reproduction et les deux
+ *     tests `tirSurConstruction_*` de la section 4, mis à jour pour
+ *     refléter le nouveau plafond.
  */
 class CombatDegatsNegatifsTest {
 
@@ -644,10 +671,11 @@ class CombatDegatsNegatifsTest {
             int degatsInfliges = bombardier.tirSurConstruction(
                     new ConstructionPlanetaire[]{mine}, Heros.HEROS_NON_PRESENT, Gouverneur.GOUVERNEUR_NON_PRESENT, true);
 
-            assertTrue(mine.getDommages() == dommagesDejaSubis + dommagesDuTir,
-                    "la mine reçoit toujours la totalité du coup dans son propre compteur de dégâts, comme avant "
-                            + "le correctif : attendu " + (dommagesDejaSubis + dommagesDuTir) + ", obtenu "
-                            + mine.getDommages());
+            assertTrue(mine.getDommages() == pointsDeStructureMine,
+                    "depuis le correctif de plafonnement (doc/fix/plafonnement-dommages-constructions-"
+                            + "planetaires.md), le compteur dommages de la mine ne peut plus dépasser sa "
+                            + "structure (15+20=35 bruts, mais plafonné à 20) : attendu " + pointsDeStructureMine
+                            + ", obtenu " + mine.getDommages());
             assertTrue(mine.estDetruit(), "la mine doit être détruite (35 > 20 points de structure)");
 
             assertTrue(degatsInfliges == structureRestanteAvantLeCoup,
@@ -695,9 +723,11 @@ class CombatDegatsNegatifsTest {
             }
 
             assertTrue(mine.estDetruit(), "3 tirs de 7 doivent détruire une mine à 20 points de structure (21 > 20)");
-            assertTrue(mine.getDommages() == 3 * dommagesParTir,
-                    "la mine encaisse toujours la totalité des 3 tirs bruts dans son propre compteur : attendu "
-                            + (3 * dommagesParTir) + ", obtenu " + mine.getDommages());
+            assertTrue(mine.getDommages() == pointsDeStructureMine,
+                    "depuis le correctif de plafonnement (doc/fix/plafonnement-dommages-constructions-"
+                            + "planetaires.md), le compteur dommages ne peut plus dépasser la structure de la mine "
+                            + "(3 tirs de 7 = 21 bruts, plafonné à 20) : attendu " + pointsDeStructureMine
+                            + ", obtenu " + mine.getDommages());
             assertTrue(totalInflige == pointsDeStructureMine,
                     "après le correctif, le cumul des dégâts infligés déclarés (7 + 7 + 6, le dernier tir plafonné "
                             + "aux 6 points qu'il restait à détruire plutôt que ses 7 points bruts) correspond "
