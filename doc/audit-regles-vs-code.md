@@ -585,9 +585,10 @@ Les règles (§8.1) : *"Un commandant ne peut faire qu'une seule enchère
 par tour."*
 
 `ReceptionOrdres.enroler_lieutenant` (`ReceptionOrdres.java:495-529`,
-déjà cité en §4.6 pour le doublement de l'offre) traite chaque ordre
-indépendamment, indexé par le lieutenant visé (`offresLieutenants`, une
-`Map` **par lieutenant**, pas par commandant) :
+cité de nouveau en §4.7 pour le doublement de l'offre, correctement
+implémenté par ailleurs) traite chaque ordre indépendamment, indexé par
+le lieutenant visé (`offresLieutenants`, une `Map` **par lieutenant**,
+pas par commandant) :
 
 ```java
 // ReceptionOrdres.java:507-508
@@ -608,6 +609,28 @@ déjà pour ce commandant ce tour-ci
 `if($nb_lignes<1)`) — sans contrôle équivalent côté script
 d'insertion générique (§13.2), donc sans garantie en cas de requête
 directe.
+
+*Suites données à cet écart (postérieures à l'audit initial) :*
+
+- **Procédure de test rédigée, non exécutée dans cette session** : une
+  procédure de vérification empirique a été conçue selon deux
+  approches — l'une côté Java (mock de `Univers`, instanciation de
+  `ReceptionOrdres` sans passer par son constructeur qui ouvre une
+  connexion JDBC réelle, via `Mockito.mock(ReceptionOrdres.class,
+  Mockito.CALLS_REAL_METHODS)` puis initialisation des champs privés
+  par réflexion), l'autre entièrement côté PHP/navigateur (deux
+  requêtes `enroler_lieutenant` depuis la console JavaScript, la
+  seconde contournant le formulaire masqué, puis lecture de
+  `index.php3?table=list_ordres` pour constater si les deux ordres sont
+  acceptés). Aucune des deux n'a été exécutée ni son résultat observé
+  dans cette conversation — la conclusion ci-dessus reste donc fondée
+  sur la lecture du code (`enroler_lieutenant`/`reglerEncheres`,
+  `insert.txt`), pas sur un test réellement exécuté.
+- **Rapport de détection et correctif proposé** : `doc/fix/limite-enchere-lieutenant-par-tour.md`
+  sur la branche `fix/enchere-lieutenant-limite-par-tour` (créée depuis
+  `develop`), avec un diff de correctif proposé mais **non appliqué**,
+  et un point ouvert signalé sur la cohérence à conserver avec la
+  modification d'une enchère existante côté formulaire PHP.
 
 ### 4.7 Points conformes aux règles (vérifiés, pour mémoire)
 
