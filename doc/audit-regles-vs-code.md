@@ -579,7 +579,37 @@ la met aussi à 0% (`Const.CHANCE_TROUVER_COMPETENCE_HEROS[0][4] = 0`),
 sans exception pour cette race. Cohérent avec la désactivation générale
 du marchandage, mais en écart avec le chiffre publié dans les règles.
 
-### 4.6 Points conformes aux règles (vérifiés, pour mémoire)
+### 4.6 [Écart confirmé] Aucune limite d'"une seule enchère par tour" côté Java
+
+Les règles (§8.1) : *"Un commandant ne peut faire qu'une seule enchère
+par tour."*
+
+`ReceptionOrdres.enroler_lieutenant` (`ReceptionOrdres.java:495-529`,
+déjà cité en §4.6 pour le doublement de l'offre) traite chaque ordre
+indépendamment, indexé par le lieutenant visé (`offresLieutenants`, une
+`Map` **par lieutenant**, pas par commandant) :
+
+```java
+// ReceptionOrdres.java:507-508
+if (!offresLieutenants.containsKey(o[1])) {
+    offresLieutenants.put(o[1], o[0] + "*" + c[iC].getNumero());
+```
+
+Rien n'empêche un même commandant de soumettre plusieurs ordres
+`enroler_lieutenant` ciblant des lieutenants différents dans le même
+tour : chacun est traité et peut aboutir indépendamment, permettant en
+théorie de remporter plusieurs enchères en un seul tour — contraire à
+la règle d'une seule enchère par tour.
+
+Comme pour les écarts §5.4 et §8.2, le formulaire PHP standard masque
+son propre champ de saisie dès qu'un ordre `enroler_lieutenant` existe
+déjà pour ce commandant ce tour-ci
+(`php/ordres/fr/choix/enroler_lieutenant.txt:2-4`,
+`if($nb_lignes<1)`) — sans contrôle équivalent côté script
+d'insertion générique (§13.2), donc sans garantie en cas de requête
+directe.
+
+### 4.7 Points conformes aux règles (vérifiés, pour mémoire)
 
 - **10 héros et 10 gouverneurs mis aux enchères chaque tour** :
   confirmé, `Leader.produireEncheres()` (`Leader.java:380-383`).
@@ -1802,6 +1832,38 @@ purement informatif ("combien de joueurs ont fini de jouer") sans
 effet sur le calendrier des tours — et donc sans contradiction avec la
 règle du rythme hebdomadaire fixe.
 
+### 13.7 [Comportement non documenté] Deux autres ordres limités à une soumission par tour, sans base dans les règles consultées
+
+Passage systématique des fichiers `php/ordres/fr/choix/*.txt` à la
+recherche du même motif de comptage (`$nb_lignes`) que celui déjà
+identifié en §13.2 et §4.6, pour vérifier s'il existe encore ailleurs.
+Deux occurrences supplémentaires, sans rapport avec une limite
+documentée dans les règles consultées :
+
+- **`creer_plan.txt`** (conception d'un nouveau plan de vaisseau) :
+  `$max = 1`, formulaire masqué au-delà. Les règles (§4.1.3 des
+  constructions) précisent seulement qu'*"un seul tour suffit"* pour
+  concevoir et commencer à construire un vaisseau, sans jamais limiter
+  le nombre de plans conçus par tour.
+- **`creer_strategie.txt`** (création d'une stratégie de combat) :
+  même motif, `$max = 1`. Les règles (§5.3) ne mentionnent aucune
+  limite de fréquence pour la création de stratégies.
+
+`changer_capitale.txt` est également limité à 1 par tour, mais cette
+fois cohérent avec la règle elle-même (*"vous pouvez désigner un autre
+système à la place à chaque tour"* — un seul choix de capitale ayant un
+sens par tour) ; pas compté comme écart ou comportement non documenté.
+`diviser_flotte.txt`, à l'inverse, ne comporte aucun plafond de ce
+type, cohérent avec *"une flotte peut être divisée autant de fois que
+vous voulez au cours d'un même tour"* (§4.2) — vérifié conforme.
+
+Ces deux restrictions (plan de vaisseau, stratégie) ne contredisent pas
+une règle explicite (les règles sont simplement silencieuses sur la
+fréquence), donc non comptées comme écarts confirmés — mais elles
+limitent en pratique une action que les règles ne semblent pas
+borner, et n'ont pas de contrepartie vérifiée côté Java (non
+recherchée pour ces deux ordres spécifiquement).
+
 ---
 
 ## 14. Synthèse : écarts de logique vs écarts de paramétrage
@@ -1837,6 +1899,7 @@ que centralisé dans une table de données.
 | 3.6 | Seuil d'éradication `≤30` au lieu de `<30` | Opérateur de comparaison |
 | 4.3 | Immortalité `1 + niveau×20` au lieu de `niveau×20` | `+1` câblé dans la formule de `Leader.mourir()` |
 | 4.4 | Pas d'exception clonage héros/gouverneur de départ | Vérification absente |
+| 4.6 | Aucune limite d'une seule enchère de lieutenant par tour | Contrôle absent (`Map` indexée par lieutenant, pas par commandant), masqué côté PHP (§13.2) |
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
 | 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, masqué (pas corrigé) côté formulaire PHP standard (§13.2) |
 | 5.5 | Gain de réputation automatique 0-9 par tour au lieu de 50-100 | Littéral `Univers.getInt(10)` dans `DeroulementDuTour.java`, sans le forfait fixe de 50 |
@@ -1884,7 +1947,7 @@ point.*
 
 ### 14.3 Bilan
 
-37 écarts confirmés au total (§14.1 : 31 lignes relevant au moins en
+38 écarts confirmés au total (§14.1 : 32 lignes relevant au moins en
 partie de la logique du code ; §14.2 : 11 lignes comportant une
 composante purement paramétrique — une valeur ou une table dans
 `Const.java`/`Messages.java` suffirait à les corriger ; l'écart 6.1
