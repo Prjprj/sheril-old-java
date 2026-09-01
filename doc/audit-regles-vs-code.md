@@ -1215,7 +1215,225 @@ seule).
 
 ---
 
-## 10. Synthèse : écarts de logique vs écarts de paramétrage
+## 11. Introduction, situation de départ et avantages de race
+
+Règles auditées : `rules/Mise à jour/0.1 Introduction et situation de
+départ.md` et `rules/Mise à jour/0.2 Avantage de race du commandant.md`.
+
+Code audité : `Joueur.creerCommandant` (`Joueur.java:328-473`),
+`Flotte.choixFlotteDeDepart` (`Flotte.java:257-306`),
+`Const.RACE_TECHNOLOGIES`.
+
+### 11.1 [Écart confirmé] Budget de départ : 20000 centaures au lieu de 21000
+
+Les règles (§0.1) : *"21000 centaures (monnaie du jeu)"*.
+
+```java
+// Joueur.java:341 (valeur initiale, écrasée plus bas)
+c.setCentaures(20000F);
+...
+// Joueur.java:455 (valeur finale effectivement conservée)
+c.setCentaures(20000 + Univers.getTour() * 1000);
+```
+
+Pour un commandant créé au tour 0 (début de partie), le montant final
+est de 20000 centaures, pas 21000. La progression `+1000 par tour`
+pour les commandants arrivant plus tard dans la partie n'est pas
+documentée par les règles mais est cohérente avec la nécessité de
+rattraper le retard de revenus accumulés par les commandants déjà en
+jeu — seule la valeur de référence au tour 0 diverge de la règle.
+
+### 11.2 [Écart confirmé] Technologies de départ par race : sans rapport avec le tableau des règles
+
+Les règles (§0.2) donnent une technologie de départ précise par race :
+Fremens → Station de produits alimentaires I, Atalantes → Station de
+métaux précieux I, Zwaias → Station de composants électroniques,
+Yoksors → Radar III, Fergoks → Station armement et explosifs I +
+Maîtrise militaire II.
+
+```java
+// Const.java:576-583
+public static final String[][] RACE_TECHNOLOGIES = {
+        {"scanI", "metauxII"},   // Fremen  — la règle attend une station alimentaire
+        {"plasmaI", "raffineII"},// Atalante — la règle attend une station de métaux précieux
+        {"bombeI","armeII"},     // Zwaia   — la règle attend une station de composants électroniques
+        {"missI", "infoII"},     // Yoksor  — la règle attend un radar de type III
+        {"laserI", "technoII"},  // Fergok  — la règle attend une station d'armement + maîtrise militaire II
+        {}
+};
+```
+
+Aucune des cinq races ne reçoit la ou les technologies annoncées par le
+tableau des règles — le code attribue systématiquement une arme
+(scanner, plasma, bombe, missile, laser) accompagnée d'une technologie
+de deuxième niveau totalement différente de celle documentée. Vu
+l'ampleur et la cohérence du décalage (les cinq lignes divergent), il
+s'agit probablement d'un rééquilibrage du jeu postérieur à la rédaction
+de ce tableau plutôt que d'un bug isolé — mais le tableau des règles à
+jour n'a pas été mis à jour en conséquence.
+
+### 11.3 [Écart confirmé] Aucun colonisateur dans la flotte de départ
+
+Les règles (§0.1) : *"La flotte contient des vaisseaux armés, des
+colonisateurs et des éclaireurs."* Et (§2.1.2, déjà citée en §3 de ce
+document) : *"Au début du jeu, vous disposez de 10 colonisateurs de
+votre race."*
+
+```java
+// Flotte.java:260-264
+quotas.put("Intercepteur standard", 10 + modifier * 2);
+quotas.put("Chasseur standard", 20 + modifier * 2);
+quotas.put("Fregate standard", 20 + modifier * 2);
+quotas.put("Eclaireur standard", 3 + modifier);
+quotas.put("Grand Bombardier standard", 20 + modifier * 3);
+```
+
+La flotte de départ contient bien des vaisseaux armés (Intercepteur,
+Chasseur, Frégate, Grand Bombardier) et un éclaireur — mais aucune
+entrée "colonisateur". Recherche du terme "colonisateur" dans
+`Joueur.java` et `Flotte.java` : aucune occurrence en dehors des
+méthodes de détection d'un colonisateur déjà présent dans une flotte
+(`contientColonisateur`, `trouverColonisateur`). Un nouveau commandant
+démarre donc avec 0 colonisateur au lieu des 10 annoncés.
+
+### 11.4 [Écart confirmé] Le coût de terraformation augmente bien avec le niveau, contrairement à ce que la note des règles observe
+
+Les règles (§2.1.1) contiennent une note empirique : *"Terraformer une
+planète coûte 52 à 54 centaures... **Mais ça ne semble pas être le cas
+[qu'il augmente avec le niveau] dans cette version du jeu.**"*
+
+```java
+// Planete.java:271-273
+public float coutTerraformation() {
+    return Const.COUT_BASE_TERRAFORMATION + (terraformation + 1)
+            * Const.COUT_PALIER_TERRAFORMATION;
+}
+// Const.java:184-185
+COUT_BASE_TERRAFORMATION = 50F; COUT_PALIER_TERRAFORMATION = 2F;
+```
+
+Le coût est `50 + (niveau_actuel + 1) × 2`, donc 52 au niveau 0, 54 au
+niveau 1, 56 au niveau 2, etc. — il augmente bien de 2 centaures par
+niveau de terraformation déjà atteint, indéfiniment. La fourchette
+"52 à 54" de la note des règles correspond seulement aux deux premiers
+paliers ; l'observation selon laquelle le prix n'augmenterait pas est
+donc incorrecte au-delà du niveau 1, probablement une conclusion tirée
+d'un nombre limité d'essais en jeu.
+
+### 11.5 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **2 systèmes, 30 planètes au total, 2 lieutenants (1 héros + 1
+  gouverneur)** : confirmés,
+  `Systeme.creerAuHasard(pos2, 30 - s.getNombrePlanetes())`
+  (`Joueur.java:421`) et création d'un héros et d'un gouverneur de
+  départ (`Joueur.java:459-465`).
+- **Effet de la terraformation sur les seuils de tolérance climatique**
+  (±2 par niveau sur radiation/température, pas sur la gravité) :
+  confirmé structurellement,
+  `radiation < (-2*terraformation + HABITAT_RADIATION[race][0])`
+  (`Planete.java:842-843`) — voir cependant §12.2 sur les valeurs de
+  base de ces tables de tolérance.
+
+---
+
+## 12. La galaxie, les systèmes et les planètes
+
+Règles auditées : `rules/Mise à jour/1. La galaxie, les systèmes et les
+planètes.md` (première moitié du fichier ; sa seconde moitié duplique
+le chapitre Population déjà audité en §3).
+
+Code audité : `Const.java` (constantes de génération de galaxie),
+`Systeme.creerAuHasard` (`Systeme.java:155-190`), `Messages.ETOILES`,
+`Planete.calculeMaxPopDeBase` (`Planete.java:840-...`).
+
+### 12.1 [Écart confirmé] Structure de la galaxie : 16 secteurs de 17 systèmes, pas 4 secteurs de 40 systèmes
+
+Les règles (§1.1) : *"La galaxie est découpée en 4 secteurs. Il y a 40
+systèmes par secteur."* (soit 160 systèmes au total). La grille 40×40
+à bords contigus est en revanche bien confirmée séparément (voir
+ci-dessous).
+
+```java
+// Const.java:94-100
+public static final int NB_SECTEURS_X = 4;           // secteurs par ligne ET par colonne
+public static final int BORNE_SECTEUR_X = 10;
+public static final int NB_SYSTEMES_PAR_SECTEUR = 17; // et non 40
+public static final int BORNE_MAX = NB_SECTEURS_X * BORNE_SECTEUR_X;      // = 40, conforme
+public static final int NB_SECTEURS = NB_SECTEURS_X * NB_SECTEURS_X;      // = 16, pas 4
+public static final int NB_SYSTEME = NB_SECTEURS * NB_SYSTEMES_PAR_SECTEUR; // = 272
+```
+
+`NB_SECTEURS_X = 4` désigne en réalité le nombre de secteurs par ligne
+*et* par colonne (grille 4×4 de secteurs), soit 16 secteurs au total —
+pas 4. Combiné aux 17 systèmes par secteur (et non 40), la galaxie
+compte au total 272 systèmes, très différent des 160 (4×40) qu'impliquent
+les règles. Seule la borne de coordonnées (40×40) correspond au texte.
+
+### 12.2 [Écart confirmé] Tables de tolérance climatique par race : valeurs sans rapport avec le tableau des règles
+
+Les règles (§2.1, table déjà citée en §3 de ce document) donnent des
+bornes précises de radiation et de température par race. Les tables de
+tolérance du code divergent sur la quasi-totalité des races :
+
+```java
+// Const.java:542-546 — ordre Fremens, Atalantes, Zwaias, Yoksor, Fergok, Cyborg
+HABITAT_RADIATION   = {{0, 200}, {10, 200}, {20, 150}, {20, 180}, {0, 180}, {0, 180}};
+HABITAT_TEMPERATURE = {{-110, 140}, {-80, 200}, {-150, 150}, {-150, 180}, {-150, 180}, {-100, 100}};
+```
+
+Exemple pour les Fremens : radiation min/max règle = 40/200, code =
+0/200 ; température min/max règle = 0/200, code = -110/140. Les deux
+bornes divergent pour la quasi-totalité des races et des deux
+caractéristiques. La table de gravité (`HABITAT_GRAVITE`, valeurs
+0-100 dans le code contre 0,0-10,0 "g" dans les règles) n'a pas pu être
+comparée avec certitude faute d'avoir confirmé la convention d'unité
+utilisée en interne (échelle ×10 supposée mais non vérifiée par un
+calcul de population réel) — non tranché, à vérifier par un test si
+cette piste est utile.
+
+### 12.3 [Écart confirmé, mineur] 10 types d'étoiles dans le code contre 6 documentés
+
+Les règles (§1.2.1) : *"On distingue 6 étoiles différentes : Etoile
+bleue, Nova, Etoile blanche, Naine orange, Naine bleue, Naine rouge."*
+
+```java
+// Messages.java:47-49
+public static final String[] ETOILES = { "Heron", "Kyo", "flamboyant",
+        "arcturus", "étoile bleue", "nova", "étoile blanche",
+        "naine orange", "naine bleue", "naine rouge" };
+```
+
+Les 6 types documentés sont bien présents, mais précédés de 4 types
+supplémentaires non documentés ("Heron", "Kyo", "flamboyant",
+"arcturus"), portant le total à 10.
+
+### 12.4 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Grille 40×40 à bords contigus, coordonnées de 1 à 40** : confirmé,
+  `Const.BORNE_MAX = 40` et usage modulo dans les calculs de position
+  (par exemple `Joueur.java:405-406`, `(choix.getY()+dis[i][0]) %
+  (Const.BORNE_MAX + 1)`).
+- **10 à 20 planètes par système** : confirmé,
+  `Systeme.creerAuHasard` génère `10 + hasard(10) + bonus_étoile`, puis
+  plafonne explicitement à 20 (`Systeme.java:163-176`) — le champ
+  `Const.NB_PLANETES_PAR_SYSTEMES = 29` n'est qu'une borne de
+  dimensionnement de tableau interne, jamais atteinte en pratique.
+- **Les meilleures étoiles génèrent en moyenne plus de planètes** :
+  confirmé structurellement, le bonus de planètes appliqué dépend de
+  `(NB_ETOILES - 1 - typeEtoile)`, favorisant les types d'étoile
+  d'indice le plus bas (`Systeme.java:169`).
+- **Bonus liés à la population majoritaire du système (tableau
+  §1.2.2)** : les règles précisent elles-mêmes que ce mécanisme
+  *"n'est pas le cas à ce jour"* — recherche dans le code d'un
+  quelconque modificateur basé sur la race majoritaire d'un système
+  (hors équipage des vaisseaux construits, bien confirmé conforme) :
+  aucun résultat, cohérent avec l'aveu des règles elles-mêmes. Pas
+  compté comme écart puisque déjà annoncé comme non implémenté par la
+  documentation.
+
+---
+
+## 13. Synthèse : écarts de logique vs écarts de paramétrage
 
 Pour prioriser les corrections, les écarts confirmés ci-dessus sont
 reclassés selon leur emplacement : dans un fichier de données/constantes
@@ -1224,7 +1442,7 @@ la logique elle-même (méthode d'un fichier comme `Combat.java`,
 `Commandant.java`, `Flotte.java`...) où c'est un comportement entier
 qu'il faut recoder.
 
-### 10.1 Écarts de logique/algorithme
+### 13.1 Écarts de logique/algorithme
 
 Corriger ces écarts demande de modifier du code exécutable (une
 condition, une formule, un appel manquant), pas seulement une valeur
@@ -1258,8 +1476,11 @@ que centralisé dans une table de données.
 | 8.1 | Convergence du prix des marchandises inopérante sauf taxation 0% | Division entière `(100-taux)/100` dans `Possession.evolutionPosteCo` |
 | 8.2 | Aucune limite d'une technologie cédée par tour | Contrôle absent dans `Commandant.transfertTechnologie` |
 | 9.1 | Boucle de tirs multiples désactivée (`i <= 0`) | Borne de boucle câblée en dur dans `Combat.java`, valeur réelle commentée |
+| 11.1 | Budget de départ 20000 au lieu de 21000 centaures | Littéraux `20000F`/`20000 + tour*1000` dans `Joueur.creerCommandant` |
+| 11.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` |
+| 11.4 | Le coût de terraformation augmente bien avec le niveau | Formule `50 + (niveau+1)*2` dans `Planete.coutTerraformation` |
 
-### 10.2 Écarts de paramétrage
+### 13.2 Écarts de paramétrage
 
 Corriger ces écarts se limite en principe à changer une valeur ou
 compléter une table dans `Const.java` — sans toucher à la logique qui
@@ -1274,6 +1495,10 @@ les consomme.
 | 5.3 | Réputation "coloniser" +20 au lieu de +50 | `Const.REPUTATION_COLONISER_PLANETE` |
 | 6.1 (forfait) | +20 centaures ajoutés à toute flotte, non documenté | `Const.BASE_ENTRETIEN_FLOTTE` (mais son usage inconditionnel reste une décision de code) |
 | 9.2 | Table du nombre de cibles maximum sans rapport avec "cibles = taille" | `Const.NB_CIBLES` (actuellement sans effet observable, masquée par le bug §9.1) |
+| 11.2 | Technologies de départ par race sans rapport avec le tableau des règles | `Const.RACE_TECHNOLOGIES` |
+| 12.1 | 16 secteurs de 17 systèmes au lieu de 4 secteurs de 40 | `Const.NB_SECTEURS_X`, `Const.NB_SYSTEMES_PAR_SECTEUR` |
+| 12.2 | Tables de tolérance climatique par race sans rapport avec le tableau des règles | `Const.HABITAT_RADIATION`, `Const.HABITAT_TEMPERATURE` |
+| 12.3 | 10 types d'étoiles au lieu de 6 documentés | `Messages.ETOILES` |
 
 *2.4 (coût de conception de plan 5x/10x) n'entre dans aucune des deux
 catégories : `Const.MODIFICATEUR_MULTIPLICATEUR_CREATION` est bien un
@@ -1282,28 +1507,40 @@ avec la version à jour des règles ; seul l'ancien fichier
 `rules/constructions.md`, non retouché depuis, est obsolète sur ce
 point.*
 
-### 10.3 Bilan
+### 13.3 Bilan
 
-18 des 25 écarts confirmés relèvent de la logique du code et demandent
-une correction algorithmique. Les 7 écarts purement paramétriques sont
-concentrés sur trois zones de données : les tables de compétences des
-lieutenants (§4), les constantes de réputation (§5), et la table du
-nombre de cibles maximum au combat spatial (§9.2, actuellement inerte).
+33 écarts confirmés au total. 27 relèvent au moins en partie de la
+logique du code et demandent une correction algorithmique ; 11
+comportent une composante purement paramétrique (une valeur ou une
+table dans `Const.java`/`Messages.java` suffirait à les corriger). Le
+seul écart à cheval sur les deux catégories est 6.1 (entretien de
+flotte) : ses diviseurs sont câblés dans la logique, mais son forfait
+fixe non documenté vient d'une constante. Les écarts purement
+paramétriques sont concentrés sur cinq zones de données : les tables de
+compétences des lieutenants (§4), les constantes de réputation (§5), la
+table du nombre
+de cibles maximum au combat spatial (§9.2, actuellement inerte), les
+technologies de départ par race (§11.2), et les tables de génération de
+galaxie/tolérance climatique (§12.1-12.3).
 
-Trois écarts se distinguent par leur sévérité et méritent une priorité
+Quatre écarts se distinguent par leur sévérité et méritent une priorité
 de correction : la boucle de tirs multiples désactivée en combat
 spatial (§9.1, un seul tir par vaisseau et par tour au lieu de plusieurs
 selon la taille), la convergence des prix commerciaux inopérante pour
-toute taxation non nulle (§8.1), et l'entretien de flotte deux à trois
-fois moins cher que prévu (§6.1) — les trois sont des bugs de code
-purs (division/boucle/formule), pas des erreurs de configuration.
+toute taxation non nulle (§8.1), l'entretien de flotte deux à trois
+fois moins cher que prévu (§6.1), et le vol de technologie qui octroie
+une technologie entière au lieu de transférer des points de recherche
+(§7.2) — les quatre sont des bugs de code purs (division/boucle/formule/
+mauvaise source de données), pas des erreurs de configuration.
 
 ---
 
-*Toutes les sections initialement prévues (technologies, constructions,
-population, lieutenants, relations entre commandants, flottes/combats)
-ainsi que les domaines demandés en complément (services spéciaux,
-produits commerciaux et dons, résolution détaillée du combat spatial)
-ont été audités. Restent à couvrir, sur demande : l'introduction et la
-situation de départ, les avantages de race, et le chapitre "La galaxie,
-les systèmes et les planètes" (`Mise à jour/0.1`, `0.2` et `1.`).*
+*Tous les domaines de règles du dépôt (`rules/` et `rules/Mise à
+jour/`) ont désormais été audités au moins une fois : technologies,
+constructions, population, lieutenants, relations entre commandants,
+flottes/combats, services spéciaux, produits commerciaux et dons,
+résolution détaillée du combat spatial, introduction/situation de
+départ/avantages de race, et galaxie/systèmes/planètes. Les fichiers
+`rules/qui_etes_vous.md` et `rules/situation_debut_jeu.md` n'ont pas
+été relus spécifiquement : leur contenu recoupe largement ce qui a déjà
+été vérifié via les fichiers `Mise à jour` correspondants.*
