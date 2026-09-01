@@ -690,7 +690,7 @@ autre race"* est en revanche correctement implémenté
 (`ajouterReputation(-300)`, cf. §3.1 de ce document) et cohérent avec la
 règle.
 
-### 5.4 [Point non vérifiable en l'état, signalé] Aucune limite de "3 ordres de mission spéciale par tour" trouvée côté code Java
+### 5.4 [Écart confirmé] Aucune limite de "3 ordres de mission spéciale par tour"
 
 Les règles (§7.3) : *"À chaque tour, vous pouvez donner 3 ordres de
 mission."*
@@ -700,14 +700,21 @@ chaque ordre `services_speciaux` reçu sans compteur ni limite, et
 `ReceptionOrdres.services_speciaux` (`ReceptionOrdres.java:547-550`)
 appelle cette méthode une fois par ligne d'ordre sans plafond. Recherche
 exhaustive d'un mécanisme générique de limitation du nombre d'ordres
-d'un même type par tour dans tout `src/main/java` : aucun résultat. Ceci
-fait écho à un constat similaire déjà relevé sur la limite de 999 unités
-par transfert inter-système (§2.3) : les plafonds "par tour"/"par ordre"
-annoncés dans les règles ne semblent pas appliqués côté serveur Java sur
-ce dépôt. Il n'a pas été possible de confirmer si un tel plafond existe
-ailleurs (validation du formulaire d'ordres côté PHP, ou couche non
-explorée) — signalé comme point ouvert plutôt que comme écart certain,
-conformément au principe de ne pas conclure sans vérification directe.
+d'un même type par tour dans tout `src/main/java` : aucun résultat.
+
+Vérification complémentaire côté PHP (réception/stockage des ordres) :
+`php/divers/creer_tables.php3:276` crée la table `services_speciaux`
+(`NUMERO, SYSTEME, TYPE, PLANETE`) sans contrainte d'unicité ni de
+comptage, `php/ordres/fr/affiche/services_speciaux.txt` ne fait que
+formater le texte de confirmation d'un ordre déjà accepté, et aucun des
+fichiers référençant `services_speciaux`
+(`php/ordres/fr/ordres.txt`, `php/ordres/liste/menu.php3`) ne porte de
+logique de plafonnement. Aucune limite n'a été trouvée à aucun des deux
+niveaux explorés (traitement Java des ordres, définition/stockage PHP) :
+un commandant peut donner plus de 3 ordres de mission spéciale par tour.
+Ceci fait écho au constat similaire déjà relevé sur la limite de 999
+unités par transfert inter-système (§2.3) : les plafonds "par tour"
+annoncés dans les règles ne sont pas appliqués sur ce dépôt.
 
 ### 5.5 Points conformes aux règles (vérifiés, pour mémoire)
 
@@ -860,18 +867,97 @@ numéro).
   chaque fin de tour de combat (`Vaisseau.diminuerCombativite`) —
   conforme à §5.1.
 
-### 6.4 Points non couverts par cette passe
+### 6.4 [Écart confirmé] Milice planétaire : mécanique de tir sans rapport avec "10 miliciens = 1 laser de type I"
 
-Ce domaine est large (résolution détaillée du tir, stratégies de
-combat, agressivité et seuils de fuite, résolution du combat
-planétaire/stratosphérique) et n'a pas pu être audité exhaustivement
-dans le temps imparti. Les points suivants restent à vérifier lors d'une
-prochaine passe si elle est souhaitée : seuils de fuite selon
-l'agressivité (x2/x4/x8 de puissance adverse), répartition
-stratosphère/surface selon l'agressivité, ordre de tir en combat
-planétaire (batteries → forces stratosphériques → milice → surface),
-mécanique des 10 miliciens = 1 laser de type I, batterie de défense =
-50 armes du bâtiment, 1% de chance d'explosion moteur détruit.
+Les règles (§5.2.4) : *"Chaque groupe de 10 miliciens est armé d'un
+laser de type I."* — sous-entendu : le nombre d'armes de milice qui
+tirent est `population défensive / 10`, chacune tirant une fois par
+tour de combat comme n'importe quelle arme (§5.2.5, *"les armes ne
+tirent qu'une seule fois par tour de combat"*).
+
+Le code ne modélise pas une population de lasers individuels. Il
+réutilise le mécanisme des batteries de défense (`tirDefensesPlanetaires`,
+qui fait tirer chaque construction passée en argument
+`Const.NOMBRE_SALVE_BATTERIE` = 50 fois) avec une construction fictive
+représentant la milice, un nombre de fois dérivé d'une formule
+différente :
+
+```java
+// Combat.java:784-797
+private static void tirMilicesPlanetaires(int nbPopDefensives,
+                                          ArrayList sol, Gouverneur g, Heros h, Commandant defenseur) {
+    ConstructionPlanetaire[] c = new ConstructionPlanetaire[1];
+    c[0] = new ConstructionPlanetaire("battlaI");
+    int nbTirs = 0;
+    if (nbPopDefensives > 50)
+        nbTirs = 1 + (nbPopDefensives / (2 * Const.NOMBRE_SALVE_BATTERIE));
+    if (!sol.isEmpty())
+        for (int i = 0; i < nbTirs; i++)
+            tirDefensesPlanetaires(c, sol, sol, g, h, false, defenseur);
+}
+```
+
+Le type d'arme utilisé pour ces tirs de milice est bien de la famille
+"laser" (`battlaI` est défini avec le dernier paramètre `"laser"` dans
+`ListeTechnologique.java:427`), cohérent avec "laser de type I". En
+revanche, la *fréquence* de tir ne correspond à aucune lecture directe
+de "1 shot par tranche de 10 population, une fois par tour" : la
+construction fictive est invoquée `1 + population/100` fois, et chaque
+invocation déclenche elle-même une boucle de 50 tirs
+(`Const.NOMBRE_SALVE_BATTERIE`, le même mécanisme que pour une vraie
+batterie de défense planétaire). Le volume de tirs résultant (de l'ordre
+de grandeur de `population/2` pour une grande population défensive) n'a
+pas de lien évident avec le nombre de lasers attendu (`population/10`)
+annoncé par les règles.
+
+*Portée du constat* : la lecture du code confirme sans ambiguïté que la
+formule et le mécanisme diffèrent de ce que décrivent les règles au
+mot près. Quantifier précisément l'écart de dégâts en résultant (la
+milice inflige-t-elle plus ou moins de dégâts qu'attendu, et de quel
+facteur) demanderait un test simulant un combat planétaire complet
+avec des valeurs réalistes — non réalisé ici, conformément au principe
+de ne présenter que des résultats de test réellement exécutés. Seul
+l'écart de structure/formule est donc affirmé avec certitude.
+
+### 6.5 Points de la passe précédente désormais vérifiés
+
+En complément de la passe initiale (§6.3), les points suivants ont été
+vérifiés et sont **conformes** aux règles :
+
+- **Ordre de tir en combat planétaire** (§5.2.3) : confirmé exactement,
+  `Combat.java:460-468` enchaîne dans cet ordre batteries de défense
+  (`tirDefensesPlanetaires`, ciblant en priorité les forces
+  stratosphériques), forces stratosphériques (`tirAirSol` sur `strato`),
+  milice (`tirMilicesPlanetaires`), puis vaisseaux attaquant au sol
+  (`tirAirSol` sur `sol`).
+- **Seuils de fuite selon l'agressivité** (§5.3) : confirmés
+  exhaustivement pour les six niveaux, `Combat.fuiteTactique`
+  (`Combat.java:1349-1374`) — Fuyard fuit toujours, Prudent si
+  puissance adverse > 2×, Standard si > 4×, Combatif si > 8×, Pillage
+  s'il n'y a plus de vaisseaux de la taille visée, Rageur ne fuit
+  jamais pour cause de puissance (aucune condition ne le fait fuir).
+- **Répartition stratosphère/surface selon l'agressivité** (§5.2 combat
+  planétaire) : confirmée pour Fuyard/Prudent (tous en stratosphère) et
+  Standard/Pillage (vaisseaux avec bombe en stratosphère, sans bombe au
+  sol) ; pour Combatif, le code oppose `estChasseur()` (arme de combat
+  spatial) à son complément plutôt que de tester littéralement "ne
+  possède que des bombes", ce qui ne diverge en pratique que pour un
+  vaisseau sans aucune arme (cas marginal, non approfondi).
+- **1% de chance d'explosion si le moteur est détruit** (§5.2.5) :
+  confirmé, `Const.CHANCE_EXPLOSION_MOTEUR = 1`, déclenché uniquement
+  quand un composant "moteur" devient inutilisable
+  (`Vaisseau.ajouterDommage`, `Vaisseau.java:322-338`).
+- **Batterie de défense = 50 armes du type et du niveau du bâtiment**
+  (§5.2.4) : confirmé, `Const.NOMBRE_SALVE_BATTERIE = 50` fait tirer
+  chaque construction de défense 50 fois par salve
+  (`Combat.tirDefensesPlanetaires`, `Combat.java:760-761`).
+- **Pénalités/bonus sur la population défensive (miliciens)** :
+  confirmés par recoupement avec les sections 2 et 3 de ce document —
+  `nbPopDefensive = population × stabilité / 100` (`Combat.java:420`,
+  cohérent avec §2.2), politique Défense +50% plafonné à la population
+  totale (`Combat.java:427-429`, cohérent avec §2.3), stock d'Armement
+  +50% de miliciens (`Combat.java:430-433`, cohérent avec le tableau de
+  §3.2 de `Mise à jour/3. Constructions.md`).
 
 ---
 
@@ -911,6 +997,8 @@ que centralisé dans une table de données.
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
 | 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
+| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, vérifié côté Java et côté PHP (réception/stockage des ordres) |
+| 6.4 | Milice planétaire : formule de tir sans rapport avec "10 miliciens = 1 laser" | Formule et mécanisme entiers dans `Combat.tirMilicesPlanetaires`, pas une valeur de table |
 
 ### 7.2 Écarts de paramétrage
 
@@ -936,17 +1024,18 @@ point.*
 
 ### 7.3 Bilan
 
-11 des 17 écarts confirmés relèvent de la logique du code et demandent
+13 des 19 écarts confirmés relèvent de la logique du code et demandent
 une correction algorithmique. Les 6 écarts purement paramétriques sont
 concentrés sur deux zones de données : les tables de compétences des
-lieutenants (§4) et les constantes de réputation (§5). Le §5.4 (limite
-de missions spéciales par tour) reste un point ouvert, non classé,
-faute d'avoir pu confirmer l'absence totale d'un mécanisme de plafond
-côté formulaire d'ordres.
+lieutenants (§4) et les constantes de réputation (§5).
 
 ---
 
 *Toutes les sections initialement prévues (technologies, constructions,
 population, lieutenants, relations entre commandants, flottes/combats)
-ont été auditées au moins une fois. Les points non couverts listés en
-§6.4 restent disponibles pour une passe complémentaire sur demande.*
+ont été auditées au moins une fois. Les points laissés ouverts lors de
+la première passe (limite de missions spéciales du §5.4, et les points
+de combat planétaire listés en §6.4 de la version précédente de ce
+document) ont été traités et tranchés : cinq d'entre eux se sont révélés
+conformes aux règles (§6.5), et un — la mécanique de tir de la milice
+planétaire — est un écart confirmé (§6.4).*
