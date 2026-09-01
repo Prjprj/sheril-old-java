@@ -716,7 +716,54 @@ Ceci fait écho au constat similaire déjà relevé sur la limite de 999
 unités par transfert inter-système (§2.3) : les plafonds "par tour"
 annoncés dans les règles ne sont pas appliqués sur ce dépôt.
 
-### 5.5 Points conformes aux règles (vérifiés, pour mémoire)
+*Mise à jour (§13.2) : le formulaire PHP standard de cet ordre masque
+en réalité son propre champ de saisie dès que 3 ordres existent déjà
+pour ce commandant ce tour-ci — l'écart ci-dessus reste réel au niveau
+du code (Java et du script d'insertion générique PHP), mais n'a pas
+d'effet observable pour un joueur utilisant l'interface web standard.*
+
+### 5.5 [Écart confirmé, majeur] Gain de réputation automatique par tour : 0 à 9 dans le code, 50 à 100 dans les règles
+
+Les règles (§7.5, et confirmées à l'identique dans l'ancien
+`rules/qui_etes_vous.md` §1.2) : *"chaque tour, vous gagnerez (50 + un
+nombre au hasard entre 0 et 50) points de réputation automatiquement."*
+
+```java
+// DeroulementDuTour.java:238
+c[i].ajouterReputation(Univers.getInt(10));
+```
+
+Le gain automatique appliqué à chaque commandant en fin de tour est
+`Univers.getInt(10)`, un entier aléatoire entre 0 et 9 — sans le
+forfait fixe de 50 annoncé par les règles. Le gain automatique réel
+(0-9) est donc environ 10 à 20 fois plus faible que celui annoncé
+(50-100), et non un simple décalage : contrairement au forfait de base
+documenté, un tirage à 0 est possible dans le code (aucun gain du
+tout), alors que les règles garantissent au moins 50 points par tour.
+
+### 5.6 [Écart confirmé] Malus de réputation de la politique Esclavagiste : `-2 × nombre de planètes` dans le code, `-(nombre de planètes)²` dans les règles
+
+Les règles (§2.3 de `Mise à jour/2. Population.md`, politique
+Esclavagiste) : *"perte d'un point de réputation par tour et par
+planète **au carré**."*
+
+```java
+// DeroulementDuTour.java:246-247
+else if (fief.getPolitique() == Const.POLITIQUE_ESCLAVAGISTE)
+    c[i].ajouterReputation(-(s.getNombrePlanetesPossedees(c[i].getNumero()) * 2));
+```
+
+Le code applique `-2 × nbPlanètes` (une pénalité *linéaire*, doublée),
+pas `-(nbPlanètes)²` (une pénalité *quadratique*) comme l'exige la
+règle. Les deux formules ne coïncident que pour exactement 2 planètes
+(`2×2 = 2² = 4`) ; au-delà, l'écart se creuse rapidement (10 planètes :
+-20 dans le code contre -100 attendu). Le code semble avoir réutilisé
+par erreur le motif "`×2`" de la politique Loisir voisine
+(`ajouterReputation(nbPlanetes * 2)`, correcte, cf. §5.7) au lieu
+d'élever `nbPlanètes` au carré comme le prévoit spécifiquement la
+politique Esclavagiste.
+
+### 5.7 Points conformes aux règles (vérifiés, pour mémoire)
 
 - **Formules de revenu des trois types d'alliance** : anarchique 100
   centaures/tour/membre (`Const.REVENU_ALLIANCE_ANARCHIQUE = 100F`),
@@ -751,6 +798,17 @@ annoncés dans les règles ne sont pas appliqués sur ce dépôt.
 - **Signature de pacte +25 / rupture de pacte -100 de réputation** :
   confirmés (`Const.REPUTATION_SIGNATURE_DE_PACTE = 25`,
   `Const.REPUTATION_RUPTURE_DE_PACTE = -100`).
+- **Bonus de réputation de la politique Loisir** (`Mise à jour` ne
+  documente plus cette politique, cf. §3.5 ; l'ancien
+  `rules/univers_systemes_planetes.md` §"0. Loisir" précise *"le
+  commandant gagne un nombre de point de réputation par tour égal au
+  double du nombre de planètes"*) : confirmé,
+  `ajouterReputation(nbPlanetes * 2)` (`DeroulementDuTour.java:244-245`).
+- **Malus de réputation des politiques Intégriste et Totalitaire**
+  (règles : *"perte d'un point de réputation par tour et par
+  planète"* pour chacune) : confirmés, `-1 × nbPlanètes` pour les deux
+  (`DeroulementDuTour.java:248-251`) — à distinguer du malus
+  Esclavagiste (§5.6), dont la formule diverge de la règle.
 
 ---
 
@@ -1197,8 +1255,91 @@ comportement obtenu resterait très éloigné de la règle (un intercepteur
 de taille 1 pourrait par exemple viser jusqu'à 3 cibles au lieu d'une
 seule).
 
-### 9.3 Points conformes aux règles (vérifiés, pour mémoire)
+### 9.3 [Écart confirmé, sévère] La fiabilité de l'arme n'est jamais appliquée en combat spatial, et son seul autre point d'application est désactivé
 
+Les règles (§5.2.5, dernier facteur de la séquence de tir) : *"Fiabilité
+de l'arme : l'arme a un pourcentage de chance égal à sa caractéristique
+fiabilité de ne pas fonctionner correctement."*
+
+Recherche de tous les appels à `Arme.getFiabilite()` dans
+`src/main/java` : **un seul résultat**, et il est désactivé :
+
+```java
+// ConstructionPlanetaire.java:87-94 (tir d'une batterie de défense planétaire)
+public void tir(Vaisseau v, Gouverneur g, Heros h, boolean boutPortant) {
+    ...
+    Arme arme = batiment.getArme();
+    if (true /** !Univers.getTest(arme.getFiabilite()) **/
+    ) {
+        ...
+```
+
+Le test réel (`!Univers.getTest(arme.getFiabilite())`) est mis en
+commentaire et remplacé par un `if (true)` inconditionnel : même dans
+ce seul endroit où la fiabilité est référencée (le tir d'une batterie
+de défense **planétaire**, hors du périmètre du combat spatial), le
+test est un no-op. La méthode de tir des vaisseaux en combat spatial
+(`Vaisseau.tir`/`reussiteTir`, `Vaisseau.java:421-472`, détaillée en
+§9.6) ne fait quant à elle jamais référence à `getFiabilite()` — la
+fiabilité de l'arme n'entre dans aucun des deux contextes de combat
+malgré son existence en tant que caractéristique définie sur `Arme`.
+
+### 9.4 [Écart confirmé] Formule d'inversion de position pour une stratégie de combat : les vaisseaux d'une flotte défenseur sont mal repositionnés
+
+Les règles (§5.3, exemple) : une stratégie de combat enregistre
+toujours un positionnement *"en considérant que la flotte est
+l'attaquante"* ; si cette flotte se retrouve défenseur, *"l'ordinateur
+modifie automatiquement la position"* — l'exemple donné calcule
+l'inversion en (13=30-17, 27=30-3) pour une position d'origine (17,3).
+
+```java
+// Combat.java:1237-1246
+int[] inter = (int[]) o;   // position enregistrée dans la stratégie, en supposant la flotte attaquante
+if (!att) {                // cette flotte est en réalité défenseur
+    inter[1] = Const.COMBAT_Y_ESPACE + Const.COMBAT_Y_MAX - inter[1];
+    inter[0] = Const.COMBAT_X_MAX - inter[0];
+}
+```
+
+Avec `Const.COMBAT_X_MAX = 30`, l'inversion en X reproduit exactement
+l'exemple des règles (`30 - X`). Mais l'inversion en Y utilise
+`Const.COMBAT_Y_ESPACE + Const.COMBAT_Y_MAX` = 10 + 10 = **20**, pas 30
+— il manque un second terme `COMBAT_Y_MAX` pour que la formule soit
+symétrique à celle du X (`Y_ESPACE + 2×Y_MAX` = 30, qui reproduirait
+l'exemple "27 = 30-3"). Conséquence concrète : les positions générées
+aléatoirement sans stratégie séparent bien deux zones Y disjointes,
+`[0, Y_MAX)` pour l'attaquant et `[Y_ESPACE+Y_MAX, Y_ESPACE+2×Y_MAX)` =
+`[20, 30)` pour le défenseur (`Combat.java:1226-1231`, vérifié
+conforme) — mais un vaisseau positionné par une stratégie et se
+retrouvant défenseur est mirroré vers `[10, 20]`, c'est-à-dire dans la
+**zone tampon entre les deux camps**, pas dans la zone réelle du
+défenseur où se trouvent les autres vaisseaux de sa propre flotte.
+
+### 9.5 Points conformes aux règles, vérifiés lors de cette relecture (pour mémoire)
+
+- **Facteurs de la chance de toucher** (hors fiabilité, cf. §9.3) :
+  tous les facteurs listés par les règles pour la séquence de tir sont
+  présents dans `Vaisseau.reussiteTir`
+  (`Vaisseau.java:453-472`) — taille de la cible et distance (combinées
+  dans `Arme.getChanceDeToucher`, `Arme.java:57-61`, y compris la
+  portée qui ramène la chance à 0 hors de portée), expérience des deux
+  équipages, caractéristique Attaque du héros attaquant, caractéristique
+  Défense du héros défenseur, bonus de combat spatial de la race de
+  l'équipage (`Const.RACES_CARACTERISTIQUES`).
+- **Formule de tempo** : les quatre facteurs documentés sont bien
+  présents — vitesse du héros (`Combat.determinationTempo`,
+  `Combat.java:1329-1340`, terme `modificateurHeros`), vitesse du
+  vaisseau, expérience de l'équipage et moyenne de vitesse des armes
+  (les trois dans `Vaisseau.getTempo`, `Vaisseau.java:870-877`) —, avec
+  un facteur de hasard à trois endroits distincts de la formule
+  combinée.
+- **Positionnement 3D initial et son aléa** : confirmé pour x/y,
+  `Position3D.auHasard` applique un déplacement aléatoire de ±(0 à 5)
+  quand aucune compétence "Maîtrise du savoir" ne le réduit
+  (`Position3D.java:56-62`), conforme à *"un nombre au hasard entre -5
+  et 5"* ; l'aléa en z (±(0 à 9)) est très proche de la fourchette
+  "-10 à 10" annoncée par les règles, à un arrondi près sans
+  conséquence pratique.
 - **Ordre des mouvements du tempo le plus petit au plus grand** :
   confirmé, `Combat.mouvement` fusionne les deux flottes triées par
   tempo croissant (les `TreeMap` de `determinationTempo` sont
@@ -1212,6 +1353,11 @@ seule).
   tailles de `Const.TAILLE_MAXIMAL_VAISSEAU - 1` (la plus grande) vers
   0 quand aucune stratégie ne précise de taille cible
   (`Combat.java:1311-1319`).
+- **Taille de cibles prioritaires personnalisée par type de vaisseau**
+  (exemple des règles : ordre "5 3 4 1 2 6 8 7 9 10") : confirmée,
+  quand une stratégie définit un ordre de tailles pour un type de
+  vaisseau, `choixPossibleCible` lit cet ordre indice par indice
+  (`Combat.java:1311-1319`) plutôt que d'utiliser l'ordre par défaut.
 
 ---
 
@@ -1295,6 +1441,24 @@ entrée "colonisateur". Recherche du terme "colonisateur" dans
 méthodes de détection d'un colonisateur déjà présent dans une flotte
 (`contientColonisateur`, `trouverColonisateur`). Un nouveau commandant
 démarre donc avec 0 colonisateur au lieu des 10 annoncés.
+
+*Confirmation complémentaire (point auparavant non exploré)* : les
+quotas fixes ci-dessus peuvent en théorie être remplacés par un choix
+du joueur, via la carte `m` passée à
+`Flotte.choixFlotteDeDepart(Commandant c, Map m)`
+(`Joueur.java:452`). Cette carte est construite à partir de la table
+`aa_vaisseaux` (`Const.TABLE_INSCRIPTION_VAISSEAUX`,
+`ProductionOrdres.java:496-501`), censée contenir un choix de vaisseaux
+par adresse email de candidat. Recherche de `aa_vaisseaux` dans tout
+`php/` : la table n'est **jamais écrite** par le formulaire
+d'inscription actuel (`php/register.php`), qui fixe systématiquement
+`$flotte = "NULL"` (`php/register.php:218`) et insère dans une table
+différente (`aa_inscription2`). Le mécanisme de personnalisation de la
+flotte de départ (qui aurait pu permettre d'y inclure un colonisateur)
+existe donc bien côté Java, mais est alimenté par une table jamais
+remplie par le flux d'inscription actuellement actif — confirmant que
+l'écart ci-dessus s'applique sans exception dans le jeu tel qu'il
+fonctionne aujourd'hui.
 
 ### 11.4 [Écart confirmé] Le coût de terraformation augmente bien avec le niveau, contrairement à ce que la note des règles observe
 
@@ -1384,12 +1548,25 @@ HABITAT_TEMPERATURE = {{-110, 140}, {-80, 200}, {-150, 150}, {-150, 180}, {-150,
 Exemple pour les Fremens : radiation min/max règle = 40/200, code =
 0/200 ; température min/max règle = 0/200, code = -110/140. Les deux
 bornes divergent pour la quasi-totalité des races et des deux
-caractéristiques. La table de gravité (`HABITAT_GRAVITE`, valeurs
-0-100 dans le code contre 0,0-10,0 "g" dans les règles) n'a pas pu être
-comparée avec certitude faute d'avoir confirmé la convention d'unité
-utilisée en interne (échelle ×10 supposée mais non vérifiée par un
-calcul de population réel) — non tranché, à vérifier par un test si
-cette piste est utile.
+caractéristiques.
+
+*Table de gravité, tranchée par lecture (point auparavant laissé
+ouvert)* : `Planete.calculeMaxPopDeBase` compare le champ `gravite`
+d'une planète directement à `Const.HABITAT_GRAVITE[race]`, sans aucun
+facteur d'échelle explicite dans la formule
+(`Planete.java:863-866`) — la même structure de comparaison directe que
+pour la radiation et la température, dont les unités internes sont
+confirmées non converties (mR et °C bruts). La seule lecture cohérente
+avec le reste du fichier est donc que `gravite` est stocké en dixièmes
+de g (l'unité déclarée par les règles), par exemple `Const.HABITAT_GRAVITE[0]
+= {10, 100}` représentant 1,0 g à 10,0 g. Sous cette hypothèse — la
+seule qui ne demande pas de facteur de conversion caché introuvable
+ailleurs dans le code —, la table diverge aussi de la règle pour les
+Fremens (1,0-10,0 g dans le code contre 0,0-8,0 g dans les règles) et,
+par extension probable, pour les autres races. Cette conclusion repose
+sur une hypothèse de convention d'unité raisonnable mais non vérifiée
+par un calcul réel sur une planète existante ; une confirmation par
+test (prévue plus tard) la rendrait définitive.
 
 ### 12.3 [Écart confirmé, mineur] 10 types d'étoiles dans le code contre 6 documentés
 
@@ -1599,23 +1776,31 @@ de vaisseau(x)" du tableau §0.2) sont bien confirmés exacts : la page
 `php/races/atalante.php` le vaisseau "Gardien", conformes au tableau
 des règles.
 
-### 13.6 [Point ouvert, non tranché] Système de "prêt pour le tour suivant" non documenté
+### 13.6 [Comportement non documenté, portée précisée] Système de "prêt pour le tour suivant" — probablement purement informatif
 
 Les règles (§0.1) : *"une fois par semaine, le jeu passe au tour
 suivant"* — un rythme fixe, sans mention de résolution anticipée.
 
 `php/ordres/fr/readyness.php` implémente un mécanisme où chaque
-commandant peut se déclarer "prêt" pour le tour en cours
-(table `_player_ready`), avec un compteur affichant le nombre de
-commandants prêts sur le nombre total. Ce mécanisme n'est mentionné
-nulle part dans les règles consultées. Ce fichier n'affiche et ne
-modifie que l'état "prêt" : il ne contient aucune logique de
-déclenchement de la résolution du tour, qui se trouverait ailleurs
-(planificateur externe, cron, ou logique Java non recherchée dans cette
-passe). Il n'a donc pas été possible de déterminer si cet indicateur
-purement informatif ("combien de joueurs ont fini de jouer") ou s'il
-peut réellement avancer le tour plus tôt que le rythme hebdomadaire
-annoncé — signalé comme point ouvert, pas comme écart confirmé.
+commandant peut se déclarer "prêt" pour le tour en cours (table
+`_player_ready`), avec un compteur affichant le nombre de commandants
+prêts sur le nombre total. Ce mécanisme n'est mentionné nulle part dans
+les règles consultées.
+
+*Recherche complémentaire (point auparavant laissé ouvert)* :
+recherche exhaustive de `_player_ready`/`player_ready` dans l'ensemble
+du dépôt (`src/main/java` et tout `php/`, y compris `php/script/` où
+résiderait un éventuel déclencheur de planification) : **aucune autre
+occurrence que ce fichier lui-même**. Ni le moteur Java (aucune classe
+ne lit cette table), ni aucun autre script PHP, ni un script de
+planification (`cron`) présent dans ce dépôt ne consulte cet
+indicateur. Sous réserve qu'un déclencheur externe au dépôt (une tâche
+planifiée sur le serveur d'hébergement, non versionnée) puisse exister
+sans qu'on puisse l'exclure formellement par la seule lecture du code,
+tout ce qui est présent dans ce dépôt est cohérent avec un indicateur
+purement informatif ("combien de joueurs ont fini de jouer") sans
+effet sur le calendrier des tours — et donc sans contradiction avec la
+règle du rythme hebdomadaire fixe.
 
 ---
 
@@ -1653,17 +1838,21 @@ que centralisé dans une table de données.
 | 4.3 | Immortalité `1 + niveau×20` au lieu de `niveau×20` | `+1` câblé dans la formule de `Leader.mourir()` |
 | 4.4 | Pas d'exception clonage héros/gouverneur de départ | Vérification absente |
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
-| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, vérifié côté Java et côté PHP (réception/stockage des ordres) |
+| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, masqué (pas corrigé) côté formulaire PHP standard (§13.2) |
+| 5.5 | Gain de réputation automatique 0-9 par tour au lieu de 50-100 | Littéral `Univers.getInt(10)` dans `DeroulementDuTour.java`, sans le forfait fixe de 50 |
+| 5.6 | Malus Esclavagiste `-2×planètes` au lieu de `-(planètes)²` | Littéral `*2` réutilisé par erreur dans `DeroulementDuTour.java` |
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
 | 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
 | 6.4 | Milice planétaire : formule de tir sans rapport avec "10 miliciens = 1 laser" | Formule et mécanisme entiers dans `Combat.tirMilicesPlanetaires`, pas une valeur de table |
-| 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent dans `Commandant.effectuerMissionSpeciale` |
+| 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent, mitigé par le menu déroulant PHP (§13.3) |
 | 7.2 | Vol de technologie vole une techno déjà connue et l'octroie intégralement | Méthode entière (`trouverTechnoAVoler`) sur la mauvaise source de données |
 | 8.1 | Convergence du prix des marchandises inopérante sauf taxation 0% | Division entière `(100-taux)/100` dans `Possession.evolutionPosteCo` |
-| 8.2 | Aucune limite d'une technologie cédée par tour | Contrôle absent dans `Commandant.transfertTechnologie` |
+| 8.2 | Aucune limite d'une technologie cédée par tour | Contrôle absent, masqué (pas corrigé) côté formulaire PHP standard (§13.2) |
 | 9.1 | Boucle de tirs multiples désactivée (`i <= 0`) | Borne de boucle câblée en dur dans `Combat.java`, valeur réelle commentée |
+| 9.3 | Fiabilité de l'arme jamais appliquée (combat spatial), désactivée ailleurs | Aucun appel dans `Vaisseau.tir` ; `if (true /* ... */)` dans `ConstructionPlanetaire.tir` |
+| 9.4 | Formule d'inversion de position Y (stratégie, défenseur) incorrecte | Terme `Const.COMBAT_Y_MAX` manquant dans `Combat.java` |
 | 11.1 | Budget de départ 20000 au lieu de 21000 centaures | Littéraux `20000F`/`20000 + tour*1000` dans `Joueur.creerCommandant` |
-| 11.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` |
+| 11.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` ; mécanisme de personnalisation alimenté par une table jamais remplie |
 | 11.4 | Le coût de terraformation augmente bien avec le niveau | Formule `50 + (niveau+1)*2` dans `Planete.coutTerraformation` |
 
 ### 14.2 Écarts de paramétrage
@@ -1695,29 +1884,31 @@ point.*
 
 ### 14.3 Bilan
 
-33 écarts confirmés au total. 27 relèvent au moins en partie de la
-logique du code et demandent une correction algorithmique ; 11
-comportent une composante purement paramétrique (une valeur ou une
-table dans `Const.java`/`Messages.java` suffirait à les corriger). Le
-seul écart à cheval sur les deux catégories est 6.1 (entretien de
-flotte) : ses diviseurs sont câblés dans la logique, mais son forfait
-fixe non documenté vient d'une constante. Les écarts purement
-paramétriques sont concentrés sur cinq zones de données : les tables de
-compétences des lieutenants (§4), les constantes de réputation (§5), la
-table du nombre
-de cibles maximum au combat spatial (§9.2, actuellement inerte), les
-technologies de départ par race (§11.2), et les tables de génération de
+37 écarts confirmés au total (§14.1 : 31 lignes relevant au moins en
+partie de la logique du code ; §14.2 : 11 lignes comportant une
+composante purement paramétrique — une valeur ou une table dans
+`Const.java`/`Messages.java` suffirait à les corriger ; l'écart 6.1
+apparaît dans les deux tableaux, ses diviseurs étant câblés dans la
+logique tandis que son forfait fixe non documenté vient d'une
+constante). Les écarts purement paramétriques restent concentrés sur
+cinq zones de données : les tables de compétences des lieutenants
+(§4), les constantes de réputation (§5), la table du nombre de cibles
+maximum au combat spatial (§9.2, actuellement inerte), les technologies
+de départ par race (§11.2), et les tables de génération de
 galaxie/tolérance climatique (§12.1-12.3).
 
-Quatre écarts se distinguent par leur sévérité et méritent une priorité
-de correction : la boucle de tirs multiples désactivée en combat
-spatial (§9.1, un seul tir par vaisseau et par tour au lieu de plusieurs
-selon la taille), la convergence des prix commerciaux inopérante pour
-toute taxation non nulle (§8.1), l'entretien de flotte deux à trois
-fois moins cher que prévu (§6.1), et le vol de technologie qui octroie
-une technologie entière au lieu de transférer des points de recherche
-(§7.2) — les quatre sont des bugs de code purs (division/boucle/formule/
-mauvaise source de données), pas des erreurs de configuration.
+Six écarts se distinguent par leur sévérité et méritent une priorité de
+correction : la boucle de tirs multiples désactivée en combat spatial
+(§9.1, un seul tir par vaisseau et par tour au lieu de plusieurs selon
+la taille), la fiabilité de l'arme jamais appliquée en combat spatial
+(§9.3), la convergence des prix commerciaux inopérante pour toute
+taxation non nulle (§8.1), l'entretien de flotte deux à trois fois
+moins cher que prévu (§6.1), le vol de technologie qui octroie une
+technologie entière au lieu de transférer des points de recherche
+(§7.2), et le gain de réputation automatique par tour dix fois plus
+faible qu'annoncé (§5.5) — les six sont des bugs de code purs
+(division/boucle/formule/mauvaise source de données/vérification
+désactivée), pas des erreurs de configuration.
 
 ---
 
@@ -1726,10 +1917,19 @@ jour/`) ont désormais été audités au moins une fois : technologies,
 constructions, population, lieutenants, relations entre commandants,
 flottes/combats, services spéciaux, produits commerciaux et dons,
 résolution détaillée du combat spatial, introduction/situation de
-départ/avantages de race, et galaxie/systèmes/planètes. Les fichiers
-`rules/qui_etes_vous.md` et `rules/situation_debut_jeu.md` n'ont pas
-été relus spécifiquement : leur contenu recoupe largement ce qui a déjà
-été vérifié via les fichiers `Mise à jour` correspondants.*
+départ/avantages de race, et galaxie/systèmes/planètes.
+`rules/qui_etes_vous.md` et `rules/situation_debut_jeu.md` ont
+également été relus (point auparavant laissé de côté) : le premier
+décrit un système de 10 races (Humains, ZorgluBs, Golos, Yozdas,
+Jondoïshi, Nomades, Drewins, Tonks, Golubs, Zooush) entièrement
+différent des 6 races utilisées partout ailleurs dans ce dépôt
+(Fremens, Atalantes, Zwaias, Yoksors, Fergoks, Cyborgs) — c'est un
+document de lore obsolète, antérieur à un renommage/refonte des races,
+sans rapport testable avec le code actuel, à l'exception de son
+tableau de réputation qui a permis de corroborer et d'affiner l'écart
+§5.5 (gain automatique par tour) ; le second (`situation_debut_jeu.md`)
+est un texte purement narratif sur des personnages non-joueurs, sans
+mécanique vérifiable.*
 
 *Une passe dédiée à la couche PHP (`php/`, §13) a également été menée,
 en complément de l'audit Java qui reste le corps principal de ce
