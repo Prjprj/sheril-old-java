@@ -1433,7 +1433,122 @@ supplémentaires non documentés ("Heron", "Kyo", "flamboyant",
 
 ---
 
-## 13. Synthèse : écarts de logique vs écarts de paramétrage
+## 13. Couche PHP (interface web)
+
+Jusqu'ici, l'audit a porté presque exclusivement sur
+`src/main/java/zIgzAg/jeu/oceane` — la couche PHP (`php/`, une
+cinquantaine de fichiers : formulaires d'ordres, rapports, forum,
+pages de présentation des races) n'avait été consultée que
+ponctuellement (aide en jeu, recherche de plafonds absents). Cette
+section couvre une passe dédiée à cette couche : le PHP de ce dépôt est
+essentiellement une interface web (soumission d'ordres, affichage de
+rapports) au-dessus du moteur de jeu Java, pas une réimplémentation des
+règles — les constats ci-dessous portent donc sur des fonctionnalités
+web spécifiques plutôt que sur des recalculs de formules déjà audités
+côté Java.
+
+### 13.1 [Comportement non documenté] "Marché Galactique" : une bourse d'offres de vente publique, mécanisme distinct de celui décrit par les règles
+
+Les règles du commerce (§6.1.1 de `produits_commerciaux_et_dons.md`,
+déjà auditées en §8 de ce document) décrivent un commerce **fondé sur
+la flotte** : pour acheter/vendre dans un poste commercial étranger, il
+faut qu'une flotte stationne au-dessus du système ciblé en fin de tour.
+
+`php/ordres/marche_galactique.php` implémente un mécanisme différent :
+un commandant poste une offre de vente (système, marchandise, quantité,
+prix) dans une table globale (`vendre_galactique`), visible/achetable
+en principe par n'importe quel autre commandant sans qu'aucune flotte
+ne soit nécessaire — une bourse d'annonces plutôt qu'un commerce de
+proximité. Ce mécanisme n'est mentionné nulle part dans les règles
+consultées. Le volet achat de cette même page est entièrement
+commenté (lignes 83-103, `<!--...-->`) : seul le dépôt d'offres de
+vente est aujourd'hui fonctionnel, l'achat effectif via cette bourse
+ne l'est pas.
+
+### 13.2 [Nuance sur l'écart §8.2] Le don de plus d'une technologie par tour n'est bloqué que sur un des deux chemins d'ordre possibles
+
+L'écart §8.2 constate qu'aucune limite d'une technologie cédée par tour
+n'existe côté Java. La couche PHP révèle deux chemins distincts pour
+soumettre un don de technologie, avec un comportement différent :
+
+- **Formulaire classique** (`php/ordres/data/transferer_technologie.txt`,
+  même mécanisme générique que tous les autres types d'ordres, par
+  exemple `services_speciaux` déjà vu en §7) : rien n'empêche de le
+  soumettre plusieurs fois dans le même tour. La table SQL qui stocke
+  ces ordres ne comporte aucune contrainte d'unicité :
+  `CREATE TABLE transferer_technologie(NUMERO int, BENEFICIAIRE int,
+  TECHNOLOGIE varchar(20), MODE int)` (`php/divers/creer_tables.php3:227`)
+  — un même `NUMERO` (commandant) peut y avoir autant de lignes que
+  voulu.
+- **Page matricielle** `php/ordres/technology_plan.php` (interface plus
+  récente permettant de choisir, pour un groupe de commandants en
+  partage de technologies, qui donne quoi à qui via une grille) :
+  son traitement (lignes 65-91) supprime tous les ordres existants du
+  groupe puis, pour chaque donateur, ne conserve que la **première**
+  case remplie rencontrée dans le POST (`break` après la première
+  correspondance, ligne 84) — un donateur qui aurait rempli plusieurs
+  cases de sa ligne ne voit que la première effectivement enregistrée.
+  Ceci limite de fait à un don par donateur *à chaque soumission de
+  cette page précise*, mais rien n'indique que cette limitation soit
+  une décision délibérée d'implémenter la règle plutôt qu'un effet de
+  bord du `break` — et un joueur utilisant le formulaire classique en
+  plus de cette page n'est pas concerné par la limite.
+
+L'écart §8.2 reste donc valable dans l'absolu (le formulaire classique,
+qui utilise le même mécanisme générique que tous les autres ordres,
+n'impose aucune limite), mais son exploitabilité réelle dépend du
+chemin d'ordre utilisé par le joueur.
+
+### 13.3 [Corroboration renforcée de l'écart §11.2] Les pages de présentation des races confirment les technologies codées en Java, pas celles du tableau des règles
+
+Les pages `php/races/{fremen,atalante,zwaia,yoksor,fergok}.php`
+décrivent, pour chaque race, une "Station de [ressource] de type II"
+constructible sur les systèmes de départ. Ces descriptions correspondent
+à la **deuxième** technologie de chaque entrée de
+`Const.RACE_TECHNOLOGIES` (§11.2), pas au tableau des règles §0.2 :
+
+| Race | Règles §0.2 | Java (2ᵉ techno) | PHP (`php/races/*.php`) |
+|---|---|---|---|
+| Fremens | Station produits alimentaires I | `metauxII` | "Stations d'enrichissement des métaux de type II" |
+| Atalantes | Station métaux précieux I | `raffineII` | "Stations énergétiques de type II" |
+| Zwaias | Station composants électroniques | `armeII` | "Stations d'armements et explosifs de type II" |
+| Yoksors | Radar de type III | `infoII` | "Stations de logiciels de type II" |
+| Fergoks | Station armement + maîtrise militaire II | `technoII` | "Stations de composants électroniques de type II" |
+
+Java et PHP se corroborent mutuellement (aux noms de code près) sur les
+cinq races, contre le tableau des règles §0.2 qui décrit un jeu
+différent. Ceci confirme que §11.2 est bien un décalage de la
+documentation par rapport à un rééquilibrage réel du jeu, plutôt qu'un
+bug de code isolé — le code (Java et PHP) est cohérent avec lui-même,
+seule la documentation des règles n'a pas suivi.
+
+En revanche, les noms des plans de vaisseau de départ (colonne "Plan(s)
+de vaisseau(x)" du tableau §0.2) sont bien confirmés exacts : la page
+`php/races/fremen.php` mentionne le vaisseau "Sidjin" et
+`php/races/atalante.php` le vaisseau "Gardien", conformes au tableau
+des règles.
+
+### 13.4 [Point ouvert, non tranché] Système de "prêt pour le tour suivant" non documenté
+
+Les règles (§0.1) : *"une fois par semaine, le jeu passe au tour
+suivant"* — un rythme fixe, sans mention de résolution anticipée.
+
+`php/ordres/fr/readyness.php` implémente un mécanisme où chaque
+commandant peut se déclarer "prêt" pour le tour en cours
+(table `_player_ready`), avec un compteur affichant le nombre de
+commandants prêts sur le nombre total. Ce mécanisme n'est mentionné
+nulle part dans les règles consultées. Ce fichier n'affiche et ne
+modifie que l'état "prêt" : il ne contient aucune logique de
+déclenchement de la résolution du tour, qui se trouverait ailleurs
+(planificateur externe, cron, ou logique Java non recherchée dans cette
+passe). Il n'a donc pas été possible de déterminer si cet indicateur
+purement informatif ("combien de joueurs ont fini de jouer") ou s'il
+peut réellement avancer le tour plus tôt que le rythme hebdomadaire
+annoncé — signalé comme point ouvert, pas comme écart confirmé.
+
+---
+
+## 14. Synthèse : écarts de logique vs écarts de paramétrage
 
 Pour prioriser les corrections, les écarts confirmés ci-dessus sont
 reclassés selon leur emplacement : dans un fichier de données/constantes
@@ -1442,7 +1557,7 @@ la logique elle-même (méthode d'un fichier comme `Combat.java`,
 `Commandant.java`, `Flotte.java`...) où c'est un comportement entier
 qu'il faut recoder.
 
-### 13.1 Écarts de logique/algorithme
+### 14.1 Écarts de logique/algorithme
 
 Corriger ces écarts demande de modifier du code exécutable (une
 condition, une formule, un appel manquant), pas seulement une valeur
@@ -1480,7 +1595,7 @@ que centralisé dans une table de données.
 | 11.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` |
 | 11.4 | Le coût de terraformation augmente bien avec le niveau | Formule `50 + (niveau+1)*2` dans `Planete.coutTerraformation` |
 
-### 13.2 Écarts de paramétrage
+### 14.2 Écarts de paramétrage
 
 Corriger ces écarts se limite en principe à changer une valeur ou
 compléter une table dans `Const.java` — sans toucher à la logique qui
@@ -1507,7 +1622,7 @@ avec la version à jour des règles ; seul l'ancien fichier
 `rules/constructions.md`, non retouché depuis, est obsolète sur ce
 point.*
 
-### 13.3 Bilan
+### 14.3 Bilan
 
 33 écarts confirmés au total. 27 relèvent au moins en partie de la
 logique du code et demandent une correction algorithmique ; 11
@@ -1544,3 +1659,19 @@ départ/avantages de race, et galaxie/systèmes/planètes. Les fichiers
 `rules/qui_etes_vous.md` et `rules/situation_debut_jeu.md` n'ont pas
 été relus spécifiquement : leur contenu recoupe largement ce qui a déjà
 été vérifié via les fichiers `Mise à jour` correspondants.*
+
+*Une passe dédiée à la couche PHP (`php/`, §13) a également été menée,
+en complément de l'audit Java qui reste le corps principal de ce
+document : le PHP de ce dépôt est essentiellement une interface web
+(formulaires d'ordres, rapports, forum, pages de présentation des
+races) au-dessus du moteur Java, pas une réimplémentation séparée des
+règles. Elle a révélé une fonctionnalité de commerce non documentée
+(§13.1), nuancé l'écart §8.2 sur la limite de dons de technologie
+(§13.2), renforcé la confiance dans l'écart §11.2 grâce à une
+corroboration indépendante Java/PHP (§13.3), et signalé un mécanisme de
+"prêt pour le tour suivant" non documenté dont l'effet réel sur le
+calendrier des tours n'a pas pu être tranché (§13.4). Cette passe a
+couvert les fichiers PHP contenant une logique substantielle
+(formulaires d'ordres, création de tables) ; les pages purement
+statiques (forum, authentification, présentation générale) n'ont pas
+été relues en détail faute d'intérêt pour un audit règles-vs-code.*
