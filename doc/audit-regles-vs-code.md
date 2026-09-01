@@ -961,7 +961,261 @@ vérifiés et sont **conformes** aux règles :
 
 ---
 
-## 7. Synthèse : écarts de logique vs écarts de paramétrage
+## 7. Services spéciaux
+
+Règles auditées : `rules/services_speciaux.md` (ancien, détaille les 4
+missions et le principe des chances de succès) et §7.3 de
+`Mise à jour/7. Relations entre les commandants.md` (déjà lu lors de
+l'audit du §5 de ce document, revu ici plus en détail).
+
+Code audité : `Commandant.effectuerMissionSpeciale`
+(`Commandant.java:3016-3151`), `Commandant.trouverTechnoAVoler`
+(`Commandant.java:2259-2268`).
+
+### 7.1 [Écart confirmé] Aucune vérification que le système ciblé est possédé ou détecté
+
+Les règles (§7.3, cohérentes dans les deux versions) : *"Les services
+spéciaux peuvent agir sur une planète qui vous appartient (pour la
+propagande) ou sur une planète que vous détectez."* / *"Vos services
+spéciaux ne peuvent agir que sur vos propres systèmes, ou bien sur les
+systèmes que vous détectez et dont la liste figure sur votre rapport."*
+
+`Commandant.effectuerMissionSpeciale` ne vérifie que l'existence du
+système ciblé (`Univers.existenceSysteme(pos)`) et de la planète — à
+aucun moment le code ne vérifie que ce système appartient au commandant
+ou figure dans sa liste de systèmes détectés
+(`getSystemesDetectesArrayList()`, utilisée ailleurs, par exemple par
+`Alliance.determinerSystemesDetectees`). Un commandant peut donc, en
+l'état du code, cibler n'importe quel système existant de la galaxie
+avec une mission spéciale, y compris un système jamais détecté.
+
+### 7.2 [Écart confirmé] Vol de technologie : vole une technologie déjà connue de la cible, pas des points de sa recherche en cours
+
+Les règles sont précises sur la mécanique : *"Vol de technologie : Des
+espions détournent des points de recherche d'une technologie que votre
+adversaire cherche ce tour-ci"* (Mise à jour) / *"vos espions... tenteront
+de vous ramener des points de technologie pris à l'ennemi dans son
+domaine de recherche actuel"* (ancien fichier). Dans les deux formulations,
+la source du vol est le **domaine de recherche en cours** de la cible
+(une technologie qu'elle est en train de chercher), et ce qui est volé
+est un **nombre de points de recherche**, pas la technologie entière.
+
+Le code fait tout autre chose :
+
+```java
+// Commandant.java:2259-2268
+private String trouverTechnoAVoler(Commandant cible, int fric) {
+    String[] liste = cible.listeTechnologiesNonPubliquesConnues();
+    for (int i = 0; i < liste.length; i++)
+        if (!estTechnologieConnue(liste[i])
+                && peutChercherTechnologie(liste[i])
+                && fric >= (Univers.getTechnologie(liste[i])
+                        .getPointsDeRecherche() / 10))
+            return liste[i];
+    return null;
+}
+// Commandant.java:3070-3081
+String technoVolee = trouverTechnoAVoler(c, reussite);
+...
+ajouterTechnologieConnue(technoVolee);   // technologie octroyée intégralement
+```
+
+`listeTechnologiesNonPubliquesConnues()` retourne les technologies déjà
+**maîtrisées** par la cible (pas son domaine de recherche en cours), et
+`ajouterTechnologieConnue` l'accorde **intégralement et immédiatement**
+au voleur — aucun point de recherche n'est transféré vers une recherche
+en cours de l'attaquant. Deux écarts cumulés par rapport à la règle :
+la source (technologies connues au lieu de recherche active) et l'effet
+(technologie complète octroyée au lieu de points de recherche transférés).
+
+### 7.3 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Sabotage détruit tous les bâtiments de la planète ciblée** :
+  confirmé, `sys.detruireToutBatimentDePlanete(nPlanete)`
+  (`Commandant.java:3092`), cohérent avec *"Un sabotage réussi détruit
+  tous les batiments de la planète ciblée."*
+- **Chances de succès basées sur le budget total de services spéciaux
+  de l'attaquant, le budget total de contre-espionnage de la cible et
+  le budget de contre-espionnage local du système visé** : les trois
+  facteurs annoncés par les règles sont bien présents — `attaque` =
+  budget total de l'attaquant, et `defense = sys.getBudgetContreEspionnage(numero)`
+  agrège en réalité *à la fois* le budget de contre-espionnage total du
+  commandant défenseur *et* sa part de budget allouée localement à ce
+  système (`Systeme.java:977-989`), les deux facteurs sont donc bien
+  pris en compte même s'ils sont fusionnés dans une seule variable.
+- **Propagande sur ses propres planètes fait remonter la stabilité au
+  lieu de la baisser** : confirmé,
+  `if (c == this) { setStabilite(stab + Math.min(20, reussite)); }`
+  (`Commandant.java:3106-3108`).
+
+---
+
+## 8. Produits commerciaux et dons entre commandants
+
+Règles auditées : `rules/produits_commerciaux_et_dons.md`.
+
+Code audité : `Possession.java`, `Commandant.java` (achat/vente de
+marchandises, vente de flotte, transfert de technologie).
+
+### 8.1 [Écart confirmé, sévère — bug de troncature entière] Le prix des marchandises ne converge jamais vers le prix moyen, sauf à taxation 0%
+
+Les règles (§6.1.4) donnent une formule précise de convergence du prix
+en fin de tour :
+
+> nouveau prix = ancien prix − ( [100 − taux de taxation] / 100 ) ×
+> [ (ancien prix − prix moyen) / (2 + quantité / 10) ]
+
+Le code reproduit cette formule au signe et aux termes près — mais
+entièrement en arithmétique entière :
+
+```java
+// Possession.java:294-303 — évolution du prix en fin de tour
+for (int i = 0; i < Const.NB_MARCHANDISES; i++)
+    if (contientMarchandise(i)) {
+        int ancienPrix = getPrixMarchandise(i);
+        setPrixMarchandise(
+                i,
+                ancienPrix
+                        - ((100 - taux) / 100)
+                        * ((ancienPrix - Univers.getPrixMoyenMarchandise(i))
+                                / (2 + getQuantiteMarchandise(i) / 10)));
+    }
+```
+
+`taux` est un `int` (`Possession.evolutionPosteCo(int numero, int taux,
+Systeme s)`), et `100` est un littéral entier : `(100 - taux) / 100` est
+donc une division entière qui vaut **0 pour tout taux compris entre 1 et
+99**, et ne vaut 1 que pour `taux == 0`. Le terme correctif de la
+formule — pourtant le cœur du mécanisme — est donc multiplié par zéro
+et disparaît intégralement pour tout commandant dont le taux de
+taxation des postes n'est pas exactement nul. Comme le taux par défaut
+des nouveaux commandants est justement de 50% (`Commandant.java:1488`,
+conforme à §6.1.2), la convergence des prix vers la moyenne de l'univers
+ne fonctionne en pratique jamais pour l'immense majorité des postes
+commerciaux du jeu.
+
+### 8.2 [Écart confirmé] Aucune limite d'une technologie cédée par tour
+
+Les règles (§6.2) : *"Vous ne pouvez pas céder plus d'une technologie
+par tour."*
+
+`Commandant.transfertTechnologie` (`Commandant.java:2491-2530`) ne
+comporte aucun compteur ni verrou empêchant d'appeler cette méthode
+plusieurs fois dans le même tour (vers la même cible ou des cibles
+différentes) — troisième occurrence du même constat que les plafonds
+"par tour" déjà relevés et absents ailleurs dans le code (999 unités
+par transfert inter-système en §2.3, 3 missions spéciales par tour en
+§5.4).
+
+### 8.3 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Prix initial de 5 centaures, plancher 0,1, plafond 10** : confirmé
+  — `Const.PRIX_MARCHANDISE_PAR_DEFAUT = 50` (représentation ×10) et
+  `setPrixMarchandise` borne la valeur stockée entre 1 et 100
+  (`Possession.java:189-191`).
+- **Variation de ±0,1 centaure par unité entrant/sortant du poste** :
+  confirmée, `ajouterMarchandise`/`supprimerMarchandise` ajustent le
+  prix stocké (×10) de exactement `quantite` à chaque mouvement de
+  stock (`Possession.java:210-227`).
+- **Taux de taxation par défaut de 50% pour un nouveau commandant, et
+  plafond de 100%** : confirmés, `tauxTaxationPoste = 50` à
+  l'initialisation (`Commandant.java:1488`), et
+  `Commandant.fixerTauxPostes` refuse toute valeur supérieure à 100
+  (`Commandant.java:4057-4060`).
+- **Majoration/minoration du prix effectif selon le taux de taxation à
+  l'achat/la vente** : confirmée, le prix est majoré du taux (achat,
+  `Commandant.java:2126-2127`) ou minoré du taux (vente,
+  `Commandant.java:2200-2201`) — ici en arithmétique flottante, sans le
+  bug de troncature relevé en §8.1.
+- **Vente de flotte** : moitié du prix payée par l'acheteur
+  (`cout = f.getValeur() / 2`), transaction annulée si fonds
+  insuffisants, événement rendu public
+  (`Commandant.venteFlotte`, `Commandant.java:2594-2631`) — conforme à
+  §6.2. Le renouvellement des équipages en novices n'a pas été vérifié
+  en détail (méthode `Flotte.initialiserEquipages`, non explorée).
+
+---
+
+## 9. Combat spatial (résolution détaillée)
+
+Règles auditées : `rules/Mise à jour/5. Combats.md` §5.2 (combat
+spatial : cibles, tempo, mouvement, tir).
+
+Code audité : `Combat.java`, `Vaisseau.java`, `Const.java`.
+
+### 9.1 [Écart confirmé, très sévère] La boucle de tirs multiples est désactivée — aucun vaisseau ne tire jamais sur plus d'une cible par tour
+
+Les règles (§5.2.5-5.2.6) sont explicites : *"Une ou plusieurs cibles
+sont désignées. Le nombre de cibles maximum d'un vaisseau est égal à sa
+taille."* / *"Une frégate standard (taille 4) peut tirer sur quatre
+vaisseaux différents par tour."*
+
+Le code contient bien une boucle prévue pour gérer les tirs
+supplémentaires au-delà du premier — mais sa borne a été remplacée par
+un `0` en dur, la valeur réelle étant laissée en commentaire :
+
+```java
+// Combat.java:955-962
+combat(f1, hp1, hc1, ht1, h1, f2, hp2, hc2, ht2, h2, 0);
+
+//Const.NB_CIBLES[tailleMax]
+for (int i = 1; i <= 0 /* Const.NB_CIBLES[tailleMax] */; i++) {
+    determinationCible(m1, s1, hc1, hp1, hp2, f2, i);
+    determinationCible(m2, s2, hc2, hp2, hp1, f1, i);
+    combat(f1, hp1, hc1, ht1, h1, f2, hp2, hc2, ht2, h2, i);
+}
+```
+
+`for (int i = 1; i <= 0; i++)` ne s'exécute jamais (`1 <= 0` est faux
+dès la première évaluation) : seul le premier tir (`combat(...,
+0)`, ligne 955, hors boucle) a lieu. Quelle que soit sa taille, un
+vaisseau ne peut donc actuellement tirer que sur **une seule cible par
+tour de combat**, jamais plusieurs — la mécanique multi-cibles décrite
+par les règles et illustrée par l'exemple de la frégate est entièrement
+non fonctionnelle.
+
+### 9.2 [Écart confirmé, actuellement sans effet observable à cause de §9.1] La table du nombre de cibles maximum ne correspond pas à "cibles = taille"
+
+Le code destiné à alimenter la boucle désactivée ci-dessus (`Const.NB_CIBLES[tailleMax]`)
+contient une table sans rapport avec la règle *"le nombre de cibles
+maximum d'un vaisseau est égal à sa taille"* :
+
+```java
+// Const.java:629
+public static final int[] NB_CIBLES = {0, 3, 7, 15, 31, 63, 127, 255, 511, 2000};
+// Vaisseau.java:959-981 — indexée directement par la taille du vaisseau
+if (plan.getTaille() == 1) return Const.NB_CIBLES[1];   // = 3, la règle attend 1
+if (plan.getTaille() == 4) return Const.NB_CIBLES[4];   // = 31, la règle attend 4
+```
+
+Les valeurs suivent une progression `2^n − 1` sans rapport avec une
+correspondance directe taille→nombre de cibles. Ceci ne produit
+aujourd'hui aucun effet en jeu puisque `getNbCibleMax()` n'est appelée
+nulle part dans la boucle de tir réellement exécutée (§9.1) — mais si le
+bug de la boucle venait à être corrigé sans revoir cette table, le
+comportement obtenu resterait très éloigné de la règle (un intercepteur
+de taille 1 pourrait par exemple viser jusqu'à 3 cibles au lieu d'une
+seule).
+
+### 9.3 Points conformes aux règles (vérifiés, pour mémoire)
+
+- **Ordre des mouvements du tempo le plus petit au plus grand** :
+  confirmé, `Combat.mouvement` fusionne les deux flottes triées par
+  tempo croissant (les `TreeMap` de `determinationTempo` sont
+  naturellement ordonnées, `Combat.java:1384-1411`).
+- **La cible définitive est la plus proche dans la liste des cibles
+  possibles** : confirmé, `Position3D.positionLaPlusProche(...)` est
+  utilisée pour trancher parmi les cibles possibles
+  (`Combat.determinationCible`, `Combat.java:1304-1305`).
+- **Sans taille de cible prioritaire définie, priorité aux vaisseaux
+  les plus grands** : confirmé, `choixPossibleCible` parcourt les
+  tailles de `Const.TAILLE_MAXIMAL_VAISSEAU - 1` (la plus grande) vers
+  0 quand aucune stratégie ne précise de taille cible
+  (`Combat.java:1311-1319`).
+
+---
+
+## 10. Synthèse : écarts de logique vs écarts de paramétrage
 
 Pour prioriser les corrections, les écarts confirmés ci-dessus sont
 reclassés selon leur emplacement : dans un fichier de données/constantes
@@ -970,7 +1224,7 @@ la logique elle-même (méthode d'un fichier comme `Combat.java`,
 `Commandant.java`, `Flotte.java`...) où c'est un comportement entier
 qu'il faut recoder.
 
-### 7.1 Écarts de logique/algorithme
+### 10.1 Écarts de logique/algorithme
 
 Corriger ces écarts demande de modifier du code exécutable (une
 condition, une formule, un appel manquant), pas seulement une valeur
@@ -995,12 +1249,17 @@ que centralisé dans une table de données.
 | 4.3 | Immortalité `1 + niveau×20` au lieu de `niveau×20` | `+1` câblé dans la formule de `Leader.mourir()` |
 | 4.4 | Pas d'exception clonage héros/gouverneur de départ | Vérification absente |
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
+| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, vérifié côté Java et côté PHP (réception/stockage des ordres) |
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
 | 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
-| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, vérifié côté Java et côté PHP (réception/stockage des ordres) |
 | 6.4 | Milice planétaire : formule de tir sans rapport avec "10 miliciens = 1 laser" | Formule et mécanisme entiers dans `Combat.tirMilicesPlanetaires`, pas une valeur de table |
+| 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent dans `Commandant.effectuerMissionSpeciale` |
+| 7.2 | Vol de technologie vole une techno déjà connue et l'octroie intégralement | Méthode entière (`trouverTechnoAVoler`) sur la mauvaise source de données |
+| 8.1 | Convergence du prix des marchandises inopérante sauf taxation 0% | Division entière `(100-taux)/100` dans `Possession.evolutionPosteCo` |
+| 8.2 | Aucune limite d'une technologie cédée par tour | Contrôle absent dans `Commandant.transfertTechnologie` |
+| 9.1 | Boucle de tirs multiples désactivée (`i <= 0`) | Borne de boucle câblée en dur dans `Combat.java`, valeur réelle commentée |
 
-### 7.2 Écarts de paramétrage
+### 10.2 Écarts de paramétrage
 
 Corriger ces écarts se limite en principe à changer une valeur ou
 compléter une table dans `Const.java` — sans toucher à la logique qui
@@ -1014,6 +1273,7 @@ les consomme.
 | 5.2 | Réputation "attaquer une planète" -50 au lieu de -100 | `Const.REPUTATION_ATTAQUER_PLANETE` |
 | 5.3 | Réputation "coloniser" +20 au lieu de +50 | `Const.REPUTATION_COLONISER_PLANETE` |
 | 6.1 (forfait) | +20 centaures ajoutés à toute flotte, non documenté | `Const.BASE_ENTRETIEN_FLOTTE` (mais son usage inconditionnel reste une décision de code) |
+| 9.2 | Table du nombre de cibles maximum sans rapport avec "cibles = taille" | `Const.NB_CIBLES` (actuellement sans effet observable, masquée par le bug §9.1) |
 
 *2.4 (coût de conception de plan 5x/10x) n'entre dans aucune des deux
 catégories : `Const.MODIFICATEUR_MULTIPLICATEUR_CREATION` est bien un
@@ -1022,20 +1282,28 @@ avec la version à jour des règles ; seul l'ancien fichier
 `rules/constructions.md`, non retouché depuis, est obsolète sur ce
 point.*
 
-### 7.3 Bilan
+### 10.3 Bilan
 
-13 des 19 écarts confirmés relèvent de la logique du code et demandent
-une correction algorithmique. Les 6 écarts purement paramétriques sont
-concentrés sur deux zones de données : les tables de compétences des
-lieutenants (§4) et les constantes de réputation (§5).
+18 des 25 écarts confirmés relèvent de la logique du code et demandent
+une correction algorithmique. Les 7 écarts purement paramétriques sont
+concentrés sur trois zones de données : les tables de compétences des
+lieutenants (§4), les constantes de réputation (§5), et la table du
+nombre de cibles maximum au combat spatial (§9.2, actuellement inerte).
+
+Trois écarts se distinguent par leur sévérité et méritent une priorité
+de correction : la boucle de tirs multiples désactivée en combat
+spatial (§9.1, un seul tir par vaisseau et par tour au lieu de plusieurs
+selon la taille), la convergence des prix commerciaux inopérante pour
+toute taxation non nulle (§8.1), et l'entretien de flotte deux à trois
+fois moins cher que prévu (§6.1) — les trois sont des bugs de code
+purs (division/boucle/formule), pas des erreurs de configuration.
 
 ---
 
 *Toutes les sections initialement prévues (technologies, constructions,
 population, lieutenants, relations entre commandants, flottes/combats)
-ont été auditées au moins une fois. Les points laissés ouverts lors de
-la première passe (limite de missions spéciales du §5.4, et les points
-de combat planétaire listés en §6.4 de la version précédente de ce
-document) ont été traités et tranchés : cinq d'entre eux se sont révélés
-conformes aux règles (§6.5), et un — la mécanique de tir de la milice
-planétaire — est un écart confirmé (§6.4).*
+ainsi que les domaines demandés en complément (services spéciaux,
+produits commerciaux et dons, résolution détaillée du combat spatial)
+ont été audités. Restent à couvrir, sur demande : l'introduction et la
+situation de départ, les avantages de race, et le chapitre "La galaxie,
+les systèmes et les planètes" (`Mise à jour/0.1`, `0.2` et `1.`).*
