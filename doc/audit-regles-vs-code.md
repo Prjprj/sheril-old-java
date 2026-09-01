@@ -875,6 +875,77 @@ mécanique des 10 miliciens = 1 laser de type I, batterie de défense =
 
 ---
 
+## 7. Synthèse : écarts de logique vs écarts de paramétrage
+
+Pour prioriser les corrections, les écarts confirmés ci-dessus sont
+reclassés selon leur emplacement : dans un fichier de données/constantes
+(`Const.java` et ses tables) où une simple valeur est fautive, ou dans
+la logique elle-même (méthode d'un fichier comme `Combat.java`,
+`Commandant.java`, `Flotte.java`...) où c'est un comportement entier
+qu'il faut recoder.
+
+### 7.1 Écarts de logique/algorithme
+
+Corriger ces écarts demande de modifier du code exécutable (une
+condition, une formule, un appel manquant), pas seulement une valeur
+dans une table — y compris pour ceux qui, au premier abord, ressemblent
+à un simple nombre : ce nombre est écrit en dur dans une méthode plutôt
+que centralisé dans une table de données.
+
+| § | Écart | Pourquoi c'est du code |
+|---|---|---|
+| 1.1 | Seuil de publication 60% au lieu de 75% | Littéral `60` écrit en dur dans `Technologie.java`, pas dans `Const.java` |
+| 1.2 | Entretien des technologies jamais appelé | Appel manquant, pas une valeur |
+| 1.3 | Remise de 80% non documentée | Bloc logique entier, pas un paramètre |
+| 2.1 | Mise au rebut récupère 100% au lieu de 50% | Division `/2` manquante dans `Planete.recyclerMateriel` |
+| 2.2 | Prérequis `gestplaI` non documenté | Condition ajoutée dans le code |
+| 2.3 | Aucun plafond de 999 unités/transfert | Contrôle absent, pas une valeur à ajuster |
+| 3.1 | Colonisation même race → extermination | Comparaison de race manquante dans la condition |
+| 3.2 | Colonisateur choisi = premier de la liste, pas aléatoire | Boucle déterministe au lieu d'un tirage |
+| 3.3 | Pénalité sans capitale -16% au lieu de -10% | Réutilisation erronée du dernier indice du tableau de distance |
+| 3.4 | Malus Alcools désactivé | Code commenté |
+| 3.5 | Politique Loisir -20% au lieu de -5% | Littéral `retour - retour/5` écrit en dur dans `Systeme.java` |
+| 3.6 | Seuil d'éradication `≤30` au lieu de `<30` | Opérateur de comparaison |
+| 4.3 | Immortalité `1 + niveau×20` au lieu de `niveau×20` | `+1` câblé dans la formule de `Leader.mourir()` |
+| 4.4 | Pas d'exception clonage héros/gouverneur de départ | Vérification absente |
+| 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
+| 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
+| 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
+
+### 7.2 Écarts de paramétrage
+
+Corriger ces écarts se limite en principe à changer une valeur ou
+compléter une table dans `Const.java` — sans toucher à la logique qui
+les consomme.
+
+| § | Écart | Fichier/table concerné |
+|---|---|---|
+| 4.1 | Tables de compétences ne couvrent que 6 races sur 7 (Koros absent) | `Const.CHANCE_TROUVER_COMPETENCE_HEROS`/`GOUVERNEUR` |
+| 4.2 | Compétence "voyage intragalactique" toujours à poids 0 | Mêmes tables, colonne jamais alimentée |
+| 4.5 | Marchandage héros Fremen à 0% au lieu de 9% | Une cellule de `Const.CHANCE_TROUVER_COMPETENCE_HEROS` |
+| 5.2 | Réputation "attaquer une planète" -50 au lieu de -100 | `Const.REPUTATION_ATTAQUER_PLANETE` |
+| 5.3 | Réputation "coloniser" +20 au lieu de +50 | `Const.REPUTATION_COLONISER_PLANETE` |
+| 6.1 (forfait) | +20 centaures ajoutés à toute flotte, non documenté | `Const.BASE_ENTRETIEN_FLOTTE` (mais son usage inconditionnel reste une décision de code) |
+
+*2.4 (coût de conception de plan 5x/10x) n'entre dans aucune des deux
+catégories : `Const.MODIFICATEUR_MULTIPLICATEUR_CREATION` est bien un
+paramètre, mais ce n'est pas un écart de code — le code est cohérent
+avec la version à jour des règles ; seul l'ancien fichier
+`rules/constructions.md`, non retouché depuis, est obsolète sur ce
+point.*
+
+### 7.3 Bilan
+
+11 des 17 écarts confirmés relèvent de la logique du code et demandent
+une correction algorithmique. Les 6 écarts purement paramétriques sont
+concentrés sur deux zones de données : les tables de compétences des
+lieutenants (§4) et les constantes de réputation (§5). Le §5.4 (limite
+de missions spéciales par tour) reste un point ouvert, non classé,
+faute d'avoir pu confirmer l'absence totale d'un mécanisme de plafond
+côté formulaire d'ordres.
+
+---
+
 *Toutes les sections initialement prévues (technologies, constructions,
 population, lieutenants, relations entre commandants, flottes/combats)
 ont été auditées au moins une fois. Les points non couverts listés en
