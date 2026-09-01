@@ -1,11 +1,12 @@
-# [EN COURS] Absence de la limite "une seule enchère de lieutenant par tour"
+# Absence de la limite "une seule enchère de lieutenant par tour"
 
 - **Fichier concerné** : `sources/zIgzAg/jeu/oceane/ReceptionOrdres.java`
   (méthodes `enroler_lieutenant` et `reglerEncheres`)
 - **Nature** : contrôle manquant côté serveur — pas un problème de
   données ni de configuration. Atteignable en jeu normal via une simple
   requête HTTP, sans outillage particulier.
-- **Statut** : correctif proposé ci-dessous, **non appliqué** sur cette
+- **Statut** : comportement confirmé par exécution manuelle du test
+  décrit en §4 ; correctif proposé en §3, **non appliqué** sur cette
   branche (rapport de détection uniquement, à la demande explicite).
 
 ## 1. Comportement observé
@@ -19,21 +20,22 @@ règle : chaque ordre est traité indépendamment, sans jamais vérifier
 si le commandant courant a déjà une autre enchère en cours ce tour-ci.
 
 Vérifié empiriquement côté PHP (sans toucher au Java, les joueurs n'y
-ayant pas accès) : le formulaire standard
-(`php/ordres/fr/choix/enroler_lieutenant.txt`) masque son propre champ
-de saisie dès qu'une ligne existe déjà pour le commandant dans la table
-`enroler_lieutenant` ce tour-ci (`if ($nb_lignes < 1)`), donnant
-l'illusion d'une limite appliquée. Mais l'endpoint qui insère réellement
-l'ordre (`index.php3?table=enroler_lieutenant`, traité par le script
-générique `php/ordres/insert.txt`) ne revérifie jamais ce compte avant
-d'insérer. Une deuxième requête `POST` vers ce même endpoint, avec un
-`v1` (index de lieutenant) différent du premier ordre, envoyée
-directement depuis la console JavaScript du navigateur (même session,
-sans repasser par le formulaire masqué), est acceptée sans erreur et
-crée une deuxième ligne dans `enroler_lieutenant` pour le même
-commandant. Confirmé en relisant ensuite `index.php3?table=list_ordres`
-: les deux ordres ("Offre de X centaures pour \<lieutenant>") y
-apparaissent, l'un pour chaque lieutenant visé.
+ayant pas accès), par exécution manuelle du test décrit en détail au
+§4 : le formulaire standard (`php/ordres/fr/choix/enroler_lieutenant.txt`)
+masque son propre champ de saisie dès qu'une ligne existe déjà pour le
+commandant dans la table `enroler_lieutenant` ce tour-ci
+(`if ($nb_lignes < 1)`), donnant l'illusion d'une limite appliquée.
+Mais l'endpoint qui insère réellement l'ordre
+(`index.php3?table=enroler_lieutenant`, traité par le script générique
+`php/ordres/insert.txt`) ne revérifie jamais ce compte avant d'insérer.
+Une deuxième requête `POST` vers ce même endpoint, avec un `v1` (index
+de lieutenant) différent du premier ordre, envoyée directement depuis
+la console JavaScript du navigateur (même session, sans repasser par le
+formulaire masqué), a été acceptée sans erreur JavaScript ni erreur
+serveur, et a créé une deuxième ligne dans `enroler_lieutenant` pour le
+même commandant. Confirmé en relisant ensuite
+`index.php3?table=list_ordres` : les deux ordres ("Offre de X centaures
+pour \<lieutenant>") y sont apparus, l'un pour chaque lieutenant visé.
 
 ## 2. Cause racine
 
@@ -159,16 +161,49 @@ Java de ce rapport.
 
 ## 4. Vérification
 
-Non réalisée : ce rapport documente le comportement observé et propose
-un correctif, sans l'appliquer ni le tester, à la demande explicite
-formulée pour cette branche. Une vérification par test unitaire
-(mock de `Univers`, `ReceptionOrdres` instancié sans passer par son
-constructeur qui ouvre une connexion JDBC réelle — via
+Le correctif proposé en §3 n'a pas été appliqué ni testé (à la demande
+explicite formulée pour cette branche). Le **comportement observé**
+(§1), en revanche, a été vérifié empiriquement — manuellement, par
+l'utilisateur, en exécutant la procédure ci-dessous depuis le
+navigateur, sans aucun accès Java ni serveur :
+
+1. Se connecter en tant que joueur, soumettre une première offre via le
+   formulaire normal `index.php3?table=enroler_lieutenant` (lieutenant
+   d'indice 0).
+2. Recharger la page : le formulaire a bien disparu (`$nb_lignes<1`
+   devenu faux côté PHP), confirmant que la protection n'existe que
+   côté UI.
+3. Dans le contexte de la frame affichant `index.php3?table=...`,
+   exécuter depuis la console JavaScript du navigateur :
+   ```js
+   fetch('index.php3?table=enroler_lieutenant', {
+     method: 'POST',
+     credentials: 'same-origin',
+     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+     body: new URLSearchParams({ v0: '500', v1: '1', ajout: 'Envoyer cet ordre' })
+   }).then(r => r.text()).then(html => console.log(html.length, html));
+   ```
+   (offre sur le lieutenant d'indice 1, différent du premier ordre,
+   même session).
+4. Recharger `index.php3?table=list_ordres`.
+
+**Résultat observé** : la requête du point 3 n'a produit aucune erreur
+JavaScript (la promesse s'est résolue normalement). À l'étape 4, les
+**deux** lignes d'enrôlement sont apparues ("Offre de 500 centaures
+pour \<lieutenant 0>" et "Offre de 500 centaures pour \<lieutenant
+1>"), confirmant que le second ordre a bien été accepté et enregistré
+malgré le formulaire masqué — exactement le comportement que laissait
+prévoir la lecture de `insert.txt` (absence de recomptage côté
+serveur).
+
+Une vérification complémentaire par test unitaire Java (mock de
+`Univers`, `ReceptionOrdres` instancié sans passer par son constructeur
+qui ouvre une connexion JDBC réelle — via
 `Mockito.mock(ReceptionOrdres.class, Mockito.CALLS_REAL_METHODS)` puis
-initialisation des champs privés nécessaires par réflexion) est prévue
-pour une itération ultérieure, de même qu'une vérification manuelle
-côté PHP par navigateur (déjà documentée dans la conversation ayant mené
-à ce rapport, non reproduite ici).
+initialisation des champs privés nécessaires par réflexion) reste à
+faire pour confirmer que `reglerEncheres()` attribue effectivement les
+deux lieutenants au même commandant en fin de tour — non réalisée à ce
+stade.
 
 ## 5. Portée et limites du correctif proposé
 
