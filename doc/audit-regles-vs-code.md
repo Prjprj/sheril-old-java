@@ -1465,41 +1465,112 @@ commenté (lignes 83-103, `<!--...-->`) : seul le dépôt d'offres de
 vente est aujourd'hui fonctionnel, l'achat effectif via cette bourse
 ne l'est pas.
 
-### 13.2 [Nuance sur l'écart §8.2] Le don de plus d'une technologie par tour n'est bloqué que sur un des deux chemins d'ordre possibles
+### 13.2 [Correction] Plusieurs plafonds absents côté Java sont en réalité appliqués côté formulaire PHP — via un même mécanisme de masquage, pas de rejet serveur
 
-L'écart §8.2 constate qu'aucune limite d'une technologie cédée par tour
-n'existe côté Java. La couche PHP révèle deux chemins distincts pour
-soumettre un don de technologie, avec un comportement différent :
+Un examen plus poussé (suite à la question de savoir si des écarts
+Java sont "corrigés" côté PHP) a mis au jour un mécanisme récurrent
+dans les fichiers `php/ordres/fr/choix/*.txt` : **avant d'afficher le
+`<FORM>` de saisie, le script compte les ordres déjà enregistrés pour
+ce type et ce commandant dans le tour, et n'affiche le formulaire que
+si le nombre est inférieur au plafond documenté par les règles.**
 
-- **Formulaire classique** (`php/ordres/data/transferer_technologie.txt`,
-  même mécanisme générique que tous les autres types d'ordres, par
-  exemple `services_speciaux` déjà vu en §7) : rien n'empêche de le
-  soumettre plusieurs fois dans le même tour. La table SQL qui stocke
-  ces ordres ne comporte aucune contrainte d'unicité :
-  `CREATE TABLE transferer_technologie(NUMERO int, BENEFICIAIRE int,
-  TECHNOLOGIE varchar(20), MODE int)` (`php/divers/creer_tables.php3:227`)
-  — un même `NUMERO` (commandant) peut y avoir autant de lignes que
-  voulu.
-- **Page matricielle** `php/ordres/technology_plan.php` (interface plus
-  récente permettant de choisir, pour un groupe de commandants en
-  partage de technologies, qui donne quoi à qui via une grille) :
-  son traitement (lignes 65-91) supprime tous les ordres existants du
-  groupe puis, pour chaque donateur, ne conserve que la **première**
-  case remplie rencontrée dans le POST (`break` après la première
-  correspondance, ligne 84) — un donateur qui aurait rempli plusieurs
-  cases de sa ligne ne voit que la première effectivement enregistrée.
-  Ceci limite de fait à un don par donateur *à chaque soumission de
-  cette page précise*, mais rien n'indique que cette limitation soit
-  une décision délibérée d'implémenter la règle plutôt qu'un effet de
-  bord du `break` — et un joueur utilisant le formulaire classique en
-  plus de cette page n'est pas concerné par la limite.
+- **Don de technologie (§8.2)** — correction d'une lecture précédente
+  trop rapide de ce même fichier : le formulaire classique **est bien
+  gardé**, contrairement à ce qu'affirmait la précédente version de
+  cette section.
 
-L'écart §8.2 reste donc valable dans l'absolu (le formulaire classique,
-qui utilise le même mécanisme générique que tous les autres ordres,
-n'impose aucune limite), mais son exploitabilité réelle dépend du
-chemin d'ordre utilisé par le joueur.
+  ```php
+  // php/ordres/fr/choix/transferer_technologie.txt:1-4
+  $result = mysql($base,"SELECT * FROM $table WHERE NUMERO='$commandant'");
+  $nb_lignes = mysql_num_rows($result);
+  if($nb_lignes==0){
+      // ... <FORM> de saisie ...
+  ```
+  Le formulaire de don de technologie ne s'affiche que si le
+  commandant n'a **aucun** don déjà enregistré ce tour — ce qui
+  correspond exactement à la règle "vous ne pouvez pas céder plus
+  d'une technologie par tour". L'écart §8.2 est donc **mitigé côté
+  formulaire standard**, en plus du mécanisme accidentel déjà relevé
+  sur la page matricielle `technology_plan.php`.
 
-### 13.3 [Corroboration renforcée de l'écart §11.2] Les pages de présentation des races confirment les technologies codées en Java, pas celles du tableau des règles
+- **Missions spéciales (§5.4)** — même mécanisme, avec le seuil de la
+  règle en dur :
+
+  ```php
+  // php/ordres/fr/choix/services_speciaux.txt:4-8
+  $max = 3;
+  $result = mysql($base,"SELECT * FROM $table WHERE NUMERO='$commandant'");
+  $nb_lignes = mysql_num_rows($result);
+  if($nb_lignes<$max){
+      // ... <FORM> de saisie ...
+  ```
+  Le formulaire de mission spéciale disparaît dès que 3 ordres sont
+  déjà enregistrés ce tour — conforme à la règle des 3 missions par
+  tour. L'écart §5.4 est donc lui aussi mitigé côté formulaire standard.
+
+**Mais cette protection reste purement côté interface, pas côté
+serveur.** L'insertion effective de chaque ordre passe par un unique
+script générique, commun à tous les types d'ordres :
+
+```php
+// php/ordres/insert.txt:120-145 (branche générique, utilisée par
+// transferer_technologie et services_speciaux entre autres)
+} else {
+    $result = mysql($base, "SELECT * FROM $table");
+    // ... construit dynamiquement l'INSERT à partir des champs POSTés ...
+    $query = "INSERT INTO $table($var_table) VALUES ($var_champ)";
+    $res = mysql_query($query);
+```
+
+Ce script insère sans jamais revérifier le nombre de lignes déjà
+présentes pour ce commandant. Une requête `POST` adressée directement à
+`index.php3?table=transferer_technologie` (ou `services_speciaux`),
+sans passer par la page qui masque le formulaire, insère la ligne sans
+aucun contrôle — le plafond n'existe donc que parce que l'interface
+standard ne propose plus le champ de saisie, pas parce que le serveur
+refuserait la requête. Pour un joueur qui utilise l'interface web
+normalement, les écarts §5.4 et §8.2 n'ont donc pas d'effet observable
+en pratique ; ils restent réels au niveau du code (Java et du script
+d'insertion générique PHP) et exploitables par quiconque contourne le
+formulaire.
+
+### 13.3 [Nuance sur l'écart §7.1] Le menu déroulant des missions spéciales ne propose que les systèmes détectés
+
+L'écart §7.1 (aucune vérification que le système ciblé par une mission
+spéciale est possédé ou détecté) est lui aussi tempéré côté formulaire :
+
+```php
+// php/ordres/data/services_speciaux.txt:2
+$t0=base1($base,$commandant,"z_systemes_detectes");
+```
+
+La liste déroulante des systèmes cibles (`t0`) est construite à partir
+de la table `z_systemes_detectes` (`NUMERO int PRIMARY KEY, CODE TEXT,
+PARAM TEXT`, `php/divers/creer_tables.php3:77`), qui ne contient que
+les systèmes que le commandant a effectivement détectés — pas tous les
+systèmes de la galaxie. Même limite qu'au paragraphe précédent : ceci
+ne restreint que le formulaire, pas l'insertion générique
+(`insert.txt`) ni la validation Java, donc pas de garantie en cas de
+requête directe.
+
+### 13.4 [Nuance sur l'écart §2.3] Le champ de transfert inter-système a bien une contrainte de longueur — mais elle ne correspond pas à la limite de 999 annoncée
+
+```php
+// php/ordres/fr/choix/charger_cargo.txt:5
+<input type="text" value="<?=V('v2')?>" size="4" maxlength="4" name="v2">
+```
+
+Le champ de quantité du transfert inter-système (§2.3) porte bien une
+contrainte, mais `maxlength="4"` autorise jusqu'à 4 chiffres, donc
+jusqu'à 9999 — pas 999 comme l'annoncent les règles. Contrairement aux
+deux cas précédents, cette contrainte ne reproduit donc pas
+correctement la règle même à l'échelle du formulaire (elle est de plus
+purement cosmétique : un attribut HTML `maxlength` ne bloque ni le
+collage de texte dans certains navigateurs, ni a fortiori une requête
+directe). L'écart §2.3 n'est donc pas mitigé, même partiellement, côté
+formulaire standard.
+
+### 13.5 [Corroboration renforcée de l'écart §11.2] Les pages de présentation des races confirment les technologies codées en Java, pas celles du tableau des règles
 
 Les pages `php/races/{fremen,atalante,zwaia,yoksor,fergok}.php`
 décrivent, pour chaque race, une "Station de [ressource] de type II"
@@ -1528,7 +1599,7 @@ de vaisseau(x)" du tableau §0.2) sont bien confirmés exacts : la page
 `php/races/atalante.php` le vaisseau "Gardien", conformes au tableau
 des règles.
 
-### 13.4 [Point ouvert, non tranché] Système de "prêt pour le tour suivant" non documenté
+### 13.6 [Point ouvert, non tranché] Système de "prêt pour le tour suivant" non documenté
 
 Les règles (§0.1) : *"une fois par semaine, le jeu passe au tour
 suivant"* — un rythme fixe, sans mention de résolution anticipée.
@@ -1666,12 +1737,20 @@ document : le PHP de ce dépôt est essentiellement une interface web
 (formulaires d'ordres, rapports, forum, pages de présentation des
 races) au-dessus du moteur Java, pas une réimplémentation séparée des
 règles. Elle a révélé une fonctionnalité de commerce non documentée
-(§13.1), nuancé l'écart §8.2 sur la limite de dons de technologie
-(§13.2), renforcé la confiance dans l'écart §11.2 grâce à une
-corroboration indépendante Java/PHP (§13.3), et signalé un mécanisme de
-"prêt pour le tour suivant" non documenté dont l'effet réel sur le
-calendrier des tours n'a pas pu être tranché (§13.4). Cette passe a
-couvert les fichiers PHP contenant une logique substantielle
-(formulaires d'ordres, création de tables) ; les pages purement
-statiques (forum, authentification, présentation générale) n'ont pas
+(§13.1), montré que les plafonds absents côté Java pour les dons de
+technologie (§8.2) et les missions spéciales (§5.4) sont bien
+reproduits par les formulaires PHP standard — mais seulement en
+masquant le champ de saisie une fois le quota atteint, sans aucun
+contrôle serveur équivalent dans le script d'insertion générique
+(§13.2) — nuancé de la même façon l'écart sur la vérification de
+détection des systèmes ciblés en mission spéciale (§13.3) et la limite
+de 999 unités par transfert inter-système, cette dernière non
+reproduite correctement même côté formulaire (§13.4), renforcé la
+confiance dans l'écart §11.2 grâce à une corroboration indépendante
+Java/PHP (§13.5), et signalé un mécanisme de "prêt pour le tour
+suivant" non documenté dont l'effet réel sur le calendrier des tours
+n'a pas pu être tranché (§13.6). Cette passe a couvert les fichiers PHP
+contenant une logique substantielle (formulaires d'ordres, création de
+tables) ; les pages purement statiques (forum, authentification,
+présentation générale) n'ont pas
 été relues en détail faute d'intérêt pour un audit règles-vs-code.*
