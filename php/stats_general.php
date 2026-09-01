@@ -33,9 +33,9 @@ $sql = "SELECT
             (curr.technologie - IFNULL(prev.technologie, 0)) as d_technologie,
             (curr.offensif - IFNULL(prev.offensif, 0)) as d_offensif,
             (curr.pv - IFNULL(prev.pv, 0)) as d_pv
-        FROM _statistiques curr
+        FROM statistiques curr
         JOIN aa_registre reg ON curr.numero = reg.numero
-        LEFT JOIN _statistiques prev ON curr.numero = prev.numero AND prev.tour = :tourPrecedent
+        LEFT JOIN statistiques prev ON curr.numero = prev.numero AND prev.tour = :tourPrecedent
         WHERE curr.tour = :tourActuel
         ORDER BY $tri $ordre";
 

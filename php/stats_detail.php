@@ -20,7 +20,7 @@ if (!empty($nums_array)) {
     }
 
     // 2. Historique complet
-    $stmt = $pdo->query("SELECT * FROM _statistiques WHERE numero IN ($in_query) ORDER BY tour ASC");
+    $stmt = $pdo->query("SELECT * FROM statistiques WHERE numero IN ($in_query) ORDER BY tour ASC");
     while($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $historyData[$row['numero']][] = $row;
     }
@@ -29,7 +29,7 @@ if (!empty($nums_array)) {
 // 3. Liste pour le formulaire (syntaxe array() pour 5.6)
 $listeDispo = $pdo
         ->query("SELECT DISTINCT r.numero, r.nom FROM aa_registre r 
-    JOIN _statistiques s ON r.numero = s.numero ORDER BY r.numero ASC")
+    JOIN statistiques s ON r.numero = s.numero ORDER BY r.numero ASC")
         ->fetchAll(PDO::FETCH_ASSOC);
 
 $statsToDisplay = array('puissance', 'centaure', 'planetes', 'pop_syst', 'pop_vs',
