@@ -612,25 +612,31 @@ directe.
 
 *Suites données à cet écart (postérieures à l'audit initial) :*
 
-- **Procédure de test rédigée, non exécutée dans cette session** : une
-  procédure de vérification empirique a été conçue selon deux
-  approches — l'une côté Java (mock de `Univers`, instanciation de
-  `ReceptionOrdres` sans passer par son constructeur qui ouvre une
-  connexion JDBC réelle, via `Mockito.mock(ReceptionOrdres.class,
-  Mockito.CALLS_REAL_METHODS)` puis initialisation des champs privés
-  par réflexion), l'autre entièrement côté PHP/navigateur (deux
-  requêtes `enroler_lieutenant` depuis la console JavaScript, la
-  seconde contournant le formulaire masqué, puis lecture de
-  `index.php3?table=list_ordres` pour constater si les deux ordres sont
-  acceptés). Aucune des deux n'a été exécutée ni son résultat observé
-  dans cette conversation — la conclusion ci-dessus reste donc fondée
-  sur la lecture du code (`enroler_lieutenant`/`reglerEncheres`,
-  `insert.txt`), pas sur un test réellement exécuté.
+- **Vérifié empiriquement par exécution manuelle, côté PHP/navigateur
+  uniquement** (les joueurs n'ayant pas accès au Java) : après une
+  première offre soumise normalement via le formulaire (masqué dès
+  lors, `if($nb_lignes<1)`), une seconde offre sur un lieutenant
+  différent a été envoyée depuis la console JavaScript du navigateur en
+  `POST` direct vers `index.php3?table=enroler_lieutenant` (même
+  session, sans repasser par le formulaire). Résultat observé : aucune
+  erreur à l'exécution, et les **deux** ordres apparaissent ensuite
+  dans `index.php3?table=list_ordres` — confirmant que rien côté
+  serveur (script d'insertion générique `insert.txt`) ne revérifie la
+  limite que l'UI se contente de masquer. La partie Java de l'écart
+  (attribution effective des deux lieutenants au même commandant par
+  `reglerEncheres()` en fin de tour) reste, elle, établie par lecture
+  du code plutôt que par test — non exécutée à ce stade, une procédure
+  a été rédigée (mock de `Univers`, `ReceptionOrdres` instancié sans
+  passer par son constructeur qui ouvre une connexion JDBC réelle, via
+  `Mockito.mock(ReceptionOrdres.class, Mockito.CALLS_REAL_METHODS)` puis
+  initialisation des champs privés par réflexion) pour une itération
+  ultérieure.
 - **Rapport de détection et correctif proposé** : `doc/fix/limite-enchere-lieutenant-par-tour.md`
   sur la branche `fix/enchere-lieutenant-limite-par-tour` (créée depuis
-  `develop`), avec un diff de correctif proposé mais **non appliqué**,
-  et un point ouvert signalé sur la cohérence à conserver avec la
-  modification d'une enchère existante côté formulaire PHP.
+  `develop`), avec le résultat du test ci-dessus détaillé en §4, un
+  diff de correctif proposé mais **non appliqué**, et un point ouvert
+  signalé sur la cohérence à conserver avec la modification d'une
+  enchère existante côté formulaire PHP.
 
 ### 4.7 Points conformes aux règles (vérifiés, pour mémoire)
 
