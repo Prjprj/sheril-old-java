@@ -1,13 +1,35 @@
-# Absence de la limite "une seule enchère de lieutenant par tour"
+# [INVALIDÉ] Absence de la limite "une seule enchère de lieutenant par tour"
+
+> **Correction (postérieure à ce rapport) : l'écart décrit ci-dessous
+> est réfuté.** L'analyse initiale (§1-§2) ne portait que sur
+> `ReceptionOrdres.enroler_lieutenant`/`reglerEncheres`, sans examiner
+> la boucle de dispatch des ordres qui les appelle,
+> `ReceptionOrdres.getOrdres()`/`resoudreMethode()`. Cette boucle
+> applique bien la règle : `Const.NOMBRE_LIMITE_ENROLER_LIEUTENANT = 1`,
+> et si plus d'une ligne `enroler_lieutenant` existe en base pour un
+> commandant, **la totalité** de ses lignes est écartée avant
+> traitement (pas seulement l'excédent) — voir le détail complet en
+> §6 ci-dessous, avec preuve sur données de partie réelles (tours 10 et
+> 11). Le contournement du formulaire PHP décrit en §1/§4 reste réel
+> (la ligne excédentaire est bien insérée en base), mais **sans effet
+> en jeu** : il fait perdre au joueur son enchère légitime en plus de
+> la seconde, au lieu de lui permettre de gagner deux lieutenants.
+> Rapport conservé pour la trace de l'investigation (une hypothèse
+> réfutée reste documentée, pas supprimée), le correctif proposé en §3
+> **ne doit pas être appliqué**.
 
 - **Fichier concerné** : `sources/zIgzAg/jeu/oceane/ReceptionOrdres.java`
-  (méthodes `enroler_lieutenant` et `reglerEncheres`)
-- **Nature** : contrôle manquant côté serveur — pas un problème de
-  données ni de configuration. Atteignable en jeu normal via une simple
-  requête HTTP, sans outillage particulier.
-- **Statut** : comportement confirmé par exécution manuelle du test
-  décrit en §4 ; correctif proposé en §3, **non appliqué** sur cette
-  branche (rapport de détection uniquement, à la demande explicite).
+  (méthodes `enroler_lieutenant` et `reglerEncheres` — voir la
+  correction en §6 : la méthode réellement en cause pour la limite est
+  `getOrdres()`/`resoudreMethode()`, pas celles-ci)
+- **Nature** : ~~contrôle manquant côté serveur~~ — en réalité un
+  contrôle existant, situé à un autre niveau que celui d'abord examiné.
+- **Statut** : **invalidé**, voir correction en §6. Comportement décrit
+  en §1 confirmé par exécution manuelle du test décrit en §4 (l'insertion
+  en base a bien lieu), mais sa conséquence en jeu (double enchère
+  honorée) est réfutée par la lecture complémentaire de §6 et par les
+  données de partie réelles qui y sont citées. Correctif proposé en §3
+  **non appliqué, et ne devant pas l'être** (la limite existe déjà).
 
 ## 1. Comportement observé
 
@@ -224,3 +246,67 @@ stade.
   PHP pour la modification d'une enchère existante) doit être tranché
   avant application, pour éviter de casser un cas d'usage légitime que
   le formulaire semble aujourd'hui permettre.
+
+## 6. Correction : la limite est en réalité appliquée par `ReceptionOrdres.getOrdres()`
+
+Suite à l'exécution du test décrit en §4 sur des tours réels (10 et
+11) et à la question de savoir si l'effet observé en jeu correspondait
+bien à la prédiction de ce rapport, une lecture complémentaire de
+`ReceptionOrdres.java` — au-delà des seules méthodes `enroler_lieutenant`
+et `reglerEncheres` examinées en §1-§2 — a révélé le mécanisme réel de
+traitement des ordres :
+
+```java
+// ReceptionOrdres.java:146-158 (getOrdres(), appelée avant tout traitement)
+if (((index == Const.ORDRE_ENROLER_LIEUTENANT) && (a.size() > Const.NOMBRE_LIMITE_ENROLER_LIEUTENANT))
+        || ((index == Const.ORDRE_SERVICES_SPECIAUX) && (a.size() > Const.NOMBRE_LIMITE_SERVICES_SPECIAUX))
+        || ((index == Const.ORDRE_DON_TECHNOLOGIE) && (a.size() > Const.NOMBRE_LIMITE_DON_TECHNOLOGIE))
+        || ((index == Const.ORDRE_CREER_PLAN) && (a.size() > Const.NOMBRE_LIMITE_CREATION_PLAN))
+        || ((index == Const.ORDRE_CREER_STRATEGIE) && (a.size() > Const.NOMBRE_LIMITE_CREATION_STRATEGIE))) {
+    a = new ArrayList();
+    Univers.ajouterErreur(c[iC].getNomNumeroHtml(), "ER_ORDRE_0002",
+            Const.NOMS_TABLES_ORDRES[index]);
+}
+```
+
+```java
+// Const.java:754-758
+NOMBRE_LIMITE_ENROLER_LIEUTENANT = 1;
+NOMBRE_LIMITE_SERVICES_SPECIAUX = 3;
+NOMBRE_LIMITE_DON_TECHNOLOGIE = 1;
+```
+
+`getOrdres()` est appelée par `resoudreMethode()` **avant** que
+`enroler_lieutenant(o)` ne soit invoquée pour chaque ligne — si le
+nombre de lignes en base pour ce commandant dépasse la limite, elle
+retourne un tableau **vide**, et aucune des méthodes examinées en §1-§2
+n'est jamais appelée. `resoudreMethode()` porte en plus un garde-fou
+redondant par index (`j > 0` pour `ORDRE_ENROLER_LIEUTENANT`, ligne
+203-206), qui n'a normalement pas l'occasion de s'exécuter puisque
+`getOrdres()` a déjà tout écarté en amont dans le cas où la limite est
+dépassée.
+
+**Preuve sur données de partie réelles.** Après le test manuel décrit
+en §4 (deux offres pour le commandant 1, sur les lieutenants 0 et 1),
+`data/tour10/dump.sql` confirme bien l'insertion des deux lignes en
+base — mais le rapport individuel du commandant 1 pour le tour suivant
+(`data/tour11/rapports/1tour11/rapport.xml`, section `<messages>`) ne
+contient **aucun** événement lié à l'enrôlement d'un lieutenant, ni
+succès ni échec. (Le même test répété sur les missions spéciales et le
+don de technologie, avec les mêmes conclusions, est détaillé dans les
+rapports jumeaux `doc/fix/limite-missions-speciales-par-tour.md` et
+`doc/fix/limite-don-technologie-par-tour.md`.)
+
+**Conséquence pour le joueur qui tenterait ce contournement en jeu
+réel** : loin de gagner un second lieutenant, il perd la totalité de
+ses enchères de lieutenant pour ce tour — y compris la première,
+légitime. Le "bug" décrit en §1 est donc réel *au niveau de
+l'insertion en base* (le formulaire masqué n'empêche pas une requête
+directe d'ajouter une ligne), mais n'a **aucune conséquence en jeu** :
+la règle "une seule enchère par tour" est effectivement respectée à la
+résolution.
+
+Voir `doc/audit-regles-vs-code.md` §4.6 sur la branche
+`audit/regles-vs-code-technologies` pour la version complète et à jour
+de cette correction, incluse dans le même document que les deux cas
+jumeaux.
