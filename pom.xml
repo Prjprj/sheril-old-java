@@ -51,6 +51,17 @@
             <version>5.10.3</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Nécessaire pour mocker les classes lourdes (Commandant, Systeme)
+             impossibles à instancier telles quelles dans un test unitaire.
+             mockito-core 5.x embarque le mock maker "inline" nécessaire à
+             mockStatic() sans dépendance séparée. -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
