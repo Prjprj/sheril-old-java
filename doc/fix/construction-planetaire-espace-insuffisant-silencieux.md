@@ -247,3 +247,140 @@ effectivement construit, seulement l'information donnée au joueur).
   totale du système) : le message se limite à mentionner "d'espace
   libre", comme pour les autres ressources manquantes — cohérent avec le
   niveau de détail déjà en place pour minerai/centaures/marchandises.
+
+## 7. Effet du fractionnement de l'ordre sur plusieurs commandes ou plusieurs tours
+
+Question soulevée pendant l'investigation : le joueur aurait-il eu un
+meilleur résultat en passant 9 ordres séparés de 1 unité plutôt qu'un
+seul ordre de 10 ? La réponse dépend entièrement de si ce fractionnement
+a lieu **dans le même tour** ou **sur plusieurs tours**.
+
+### Même tour : aucun effet
+
+`Commandant.mettreEnChantier` ajoute chaque ordre via
+`Possession.ajouterConstruction`, qui **fusionne** les ordres portant sur
+le même code de bâtiment et la même planète (`Integer.MIN_VALUE` quand
+elle n'est pas précisée) :
+
+```java
+public void ajouterConstruction(Construction c) {
+    Construction[] l = listeConstructions();
+    for (int i = 0; i < l.length; i++)
+        if (l[i].getCode().equals(c.getCode()) && l[i].getPlanete() == c.getPlanete()) {
+            l[i].augmenterNombre(c.getNombre());
+            return;
+        }
+    constructions.add(c);
+}
+```
+
+9 ordres de `construire boucplaVII x1` passés le même tour, sans planète
+précisée, fusionnent donc **avant résolution** en une seule ligne
+`nombre = 9` — l'état vu par `resolutionConstructions` est identique à
+celui d'un ordre unique de 9. Or `l_espace` (= espace libre du système /
+structure du bâtiment) ne dépend pas de `nb` : c'est un plafond fixe du
+système pour ce tour, pas une fraction du nombre demandé. Résultat
+identique quel que soit le découpage : `nbbis = min(nb, ..., l_espace) =
+min(9, ..., 1) = 1`, toujours **1 seule unité construite**, peu importe
+que la demande soit passée comme "9" ou comme "1 × 9".
+
+### Sur plusieurs tours (1 par tour) : ça fonctionne sans anomalie
+
+Si le joueur avait commandé 1 seul Bouclier VII par tour (en attendant
+qu'il sorte avant de recommander le suivant), chaque tour aurait vu
+`nb = 1` et `l_espace = 1` → `nbbis = min(1, ..., 1) = 1` : le nombre
+construit correspond exactement au nombre demandé, la branche `else`
+(succès) du code est correcte dans ce cas — pas de troncature, donc pas
+de bug, avec ou sans correctif.
+
+De plus, l'encombrement croît très marginalement à chaque unité
+construite (+40 points de construction par bouclier, sur un pool cumulé
+de 22 657 pour ce joueur sur ce système — voir §4) : `l_espace` resterait
+à 1 pendant un très grand nombre de tours. Les 9 unités auraient donc
+fini par sortir, une par tour, sur 9 tours, sans jamais déclencher la
+situation observée.
+
+**Conclusion** : le bug ne dépend pas du nombre total demandé mais du
+fait de le demander **en un seul lot dépassant le plafond d'un tour**. Le
+moteur gère correctement le cas "1 demandé, 1 possible" ; c'est
+uniquement le cas "N demandés, M < N possibles" qui déclenchait le
+message de succès trompeur (corrigé au §3).
+
+## 8. Piste de refonte proposée — non implémentée
+
+Le correctif du §3 résout le symptôme (message trompeur) mais ne change
+rien à la façon dont l'encombrement disponible est réparti entre les
+lignes de construction en cours. Deux limites structurelles restent en
+place, indépendantes du bug corrigé ici :
+
+1. **Répartition dépendante de l'ordre d'insertion, pas d'un objectif
+   explicite.** `resolutionConstructions` itère `listeConstructions()`
+   dans l'ordre du tableau (= ordre de programmation des ordres ce tour)
+   et relit `s.getEspaceLibre(numero)` à chaque ligne — ce qui reflète
+   correctement la consommation des lignes précédentes (puisque
+   `ajouterRichesses` a déjà mis à jour l'encombrement en fin de ligne
+   précédente), mais ne cherche jamais à *maximiser* le nombre total
+   d'unités construites ce tour. Une grosse ligne (ex. un bâtiment à forte
+   structure) placée en premier peut épuiser tout l'espace restant pour 1
+   seule unité, alors qu'une ligne plus légère placée juste après aurait
+   pu produire plusieurs unités dans le même espace.
+2. **Budget "espace" figé par ligne, pas par le tour dans son ensemble.**
+   Le calcul actuel (`l_espace = espaceLibreSurSysteme / nbPointsDeStructure`,
+   une division entière unique par ligne) est correct *au sein d'une même
+   ligne*, mais rien ne re-belance l'espace non consommé par une ligne
+   totalement/partiellement bloquée vers une autre ligne différente qui,
+   elle, aurait pu en profiter — dans l'implémentation actuelle ce
+   rééquilibrage se produit implicitement (ligne suivante = espace déjà
+   décrémenté), mais seulement dans l'ordre où les lignes apparaissent
+   dans `constructions`, jamais en réexaminant les lignes précédentes une
+   fois toutes traitées.
+
+**Proposition (à valider avant toute implémentation)** : remplacer le
+parcours séquentiel actuel par une allocation gloutonne explicite du pool
+d'encombrement du joueur sur le système, calculée une seule fois en
+début de méthode :
+
+```
+potentiel_espace = s.getEspaceLibre(com.getNumero())   // une seule lecture pour tout le tour
+
+trier les lignes de construction (bâtiments uniquement, nbPointsDeStructure > 0)
+    par pointsDeStructure croissant   // maximise le nombre total d'unités constructibles
+    // alternative : conserver l'ordre d'arrivée pour rester prévisible/équitable —
+    // compromis débit vs équité à trancher avec le porteur produit
+
+pour chaque ligne (dans cet ordre) :
+    nb_ligne = points déjà financés / pc (comme aujourd'hui)
+    l_espace_ligne = potentiel_espace / nbPointsDeStructure
+    nbbis = min(nb_ligne, l_argent, l_minerai, l_marchan, l_espace_ligne)
+    construire nbbis unités
+    potentiel_espace -= nbbis * nbPointsDeStructure   // décrément explicite, plus de relecture système
+```
+
+Points à trancher avant implémentation :
+
+- **Critère de tri** : structure croissante (maximise le *nombre* de
+  bâtiments sortis, mais peut faire attendre indéfiniment un gros
+  bâtiment derrière un flux de petits) vs ordre d'arrivée actuel (prévisible,
+  mais peut gaspiller de l'espace comme observé ici) vs une pondération
+  configurable. Un changement de comportement joueur-visible, à valider
+  avec le porteur produit avant tout correctif.
+- **Traçabilité** : si le tri change l'ordre de résolution, les messages
+  d'événement (§3) doivent rester associés à la bonne ligne/bâtiment pour
+  ne pas dérouter le joueur qui compare sa liste d'ordres à la liste
+  d'événements.
+- **Risque de régression** : `s.getEspaceLibre()` est aujourd'hui relu
+  après chaque ligne parce que `ajouterRichesses` modifie l'état de la
+  planète en direct (couplage implicite) ; le remplacer par un compteur
+  en mémoire explicite est plus robuste (n'a plus besoin de cette
+  relecture) mais doit être vérifié avec un test qui couvre au moins
+  deux lignes de types de bâtiments différents en concurrence pour le
+  même espace, dans les deux ordres d'arrivée possibles.
+- **Compatibilité** avec le mécanisme d'auto-programmation
+  (`programmationConstructions`, §2) qui ajoute déjà de nouvelles lignes
+  avant la résolution du tour — le tri/l'allocation doit s'appliquer
+  après cette étape, comme c'est le cas aujourd'hui.
+
+Cette piste est documentée ici pour référence future ; **elle n'a pas été
+implémentée** dans le cadre de ce correctif, qui reste volontairement
+minimal (§7 du principe directeur : un correctif par anomalie identifiée,
+pas de refactoring combiné).
