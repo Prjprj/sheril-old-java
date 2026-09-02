@@ -26,7 +26,8 @@ public class SessionMysql extends SessionSQL {
 			System.exit(0);
 		}
 
-		String inter = "jdbc:mysql://" + host + "/" + base + "?useUnicode=true&characterEncoding=UTF-8&useSSL=false";
+		String inter = "jdbc:mysql://" + host + "/" + base
+				+ "?useUnicode=true&characterEncoding=UTF-8&useSSL=false&requireSSL=false&verifyServerCertificate=false";
 		if (login != null)
 			inter = inter + "&user=" + login + "&password=" + motDePasse;
 		try {
@@ -35,6 +36,11 @@ public class SessionMysql extends SessionSQL {
 			System.out.println("SQLException: " + e.getMessage());
 			System.out.println("SQLState:     " + e.getSQLState());
 			System.out.println("VendorError:  " + e.getErrorCode());
+		}
+
+		if (c == null) {
+			System.err.println("Impossible d'établir la connexion à la base de données (" + host + "/" + base + ").");
+			System.exit(-1);
 		}
 
 		return c;
