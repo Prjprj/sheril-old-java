@@ -1,19 +1,27 @@
-# Absence de la limite "3 missions spéciales par tour"
+# [INVALIDÉ] Absence de la limite "3 missions spéciales par tour"
+
+> **Correction (postérieure à ce rapport, exécution manuelle de la
+> procédure du §4) : l'écart décrit ci-dessous est réfuté.** Le
+> contournement du formulaire PHP insère bien 4 lignes en base (§1,
+> vérifié sur les tours 10/11 réels), mais aucune des 4 missions n'a
+> été exécutée par Java — pas même les 3 premières, légitimes. Cause :
+> `ReceptionOrdres.getOrdres()` (non examinée en §2) écarte la
+> **totalité** des lignes `services_speciaux` d'un commandant dès que
+> leur nombre dépasse `Const.NOMBRE_LIMITE_SERVICES_SPECIAUX = 3` —
+> détail complet en §6. Le correctif proposé en §3 **ne doit pas être
+> appliqué**, la limite existe déjà. Rapport conservé pour la trace de
+> l'investigation.
 
 - **Fichiers concernés** : `sources/zIgzAg/jeu/oceane/ReceptionOrdres.java`
-  (méthode `services_speciaux`), `sources/zIgzAg/jeu/oceane/Commandant.java`
+  (méthode `services_speciaux` — voir §6 : la méthode réellement en
+  cause pour la limite est `getOrdres()`/`resoudreMethode()`, pas
+  celle-ci), `sources/zIgzAg/jeu/oceane/Commandant.java`
   (méthode `effectuerMissionSpeciale`)
-- **Nature** : contrôle manquant côté serveur — pas un problème de
-  données ni de configuration. Atteignable en jeu normal via une simple
-  requête HTTP, sans outillage particulier.
-- **Statut** : cas identifié par analogie avec l'écart déjà confirmé sur
-  l'enrôlement de lieutenant (`doc/fix/limite-enchere-lieutenant-par-tour.md`,
-  branche `fix/enchere-lieutenant-limite-par-tour`) — même mécanisme
-  exact (formulaire masqué par comptage de lignes, script d'insertion
-  générique non protégé). Comportement établi par lecture de code ;
-  **procédure de vérification empirique fournie ci-dessous, non encore
-  exécutée**. Correctif proposé en §3, **non appliqué** sur cette
-  branche.
+- **Nature** : ~~contrôle manquant côté serveur~~ — en réalité un
+  contrôle existant, situé à un autre niveau que celui d'abord examiné.
+- **Statut** : **invalidé**, voir correction en §6, confirmée par
+  exécution manuelle de la procédure du §4 sur des tours réels.
+  Correctif proposé en §3 **non appliqué, et ne devant pas l'être**.
 
 ## 1. Comportement observé
 
@@ -117,15 +125,14 @@ recherchée pour ce rapport), et une nouvelle constante
 
 ## 4. Vérification
 
-**Non exécutée.** Procédure prévue, entièrement côté PHP/navigateur
-(les joueurs n'ayant pas accès au Java), sur le même principe que celle
-déjà exécutée et confirmée pour l'enrôlement de lieutenant :
+**Exécutée manuellement**, sur le même principe que pour l'enrôlement
+de lieutenant, entièrement côté PHP/navigateur (les joueurs n'ayant pas
+accès au Java) :
 
-1. Soumettre 3 ordres `services_speciaux` normalement via le formulaire
-   (`index.php3?table=services_speciaux`), sur 3 systèmes/types
-   différents.
-2. Recharger la page : le formulaire doit avoir disparu
-   (`$nb_lignes<3` devenu faux).
+1. Soumettre des ordres `services_speciaux` normalement via le
+   formulaire (`index.php3?table=services_speciaux`).
+2. Recharger la page : le formulaire disparaît une fois 3 ordres
+   enregistrés (`$nb_lignes<3` devenu faux).
 3. Dans le contexte de la frame affichant `index.php3?table=...`,
    exécuter depuis la console JavaScript du navigateur :
    ```js
@@ -134,18 +141,24 @@ déjà exécutée et confirmée pour l'enrôlement de lieutenant :
      credentials: 'same-origin',
      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
      body: new URLSearchParams({
-       v0: '<code système, différent des 3 précédents>',
-       v1: '0',    // type de mission (espionnage = 0 dans z_missions, à vérifier via le menu déroulant réel)
-       v2: '100',  // planète non précisée (convention PLANETE_NON_PRECISE)
+       v0: '<code système, différent des précédents>',
+       v1: '0',
+       v2: '100',
        ajout: 'Envoyer cet ordre'
      })
    }).then(r => r.text()).then(html => console.log(html.length, html));
    ```
 4. Recharger `index.php3?table=list_ordres`.
 
-**Résultat attendu si l'écart est confirmé** : 4 lignes de mission
-spéciale apparaissent pour ce commandant ce tour-ci, au lieu des 3
-maximum annoncées par les règles.
+**Résultat observé (tour 10, commandant 1)** : 4 lignes ont bien été
+insérées en base (confirmé sur `data/tour10/dump.sql` : systèmes
+`0_15_11`, `0_15_10`, `0_15_13`, `0_13_28`, toutes type 0). Mais le
+rapport individuel du tour suivant
+(`data/tour11/rapports/1tour11/rapport.xml`, section `<messages>`) ne
+contient **aucun** événement de mission spéciale — ni succès, ni échec,
+pour aucune des 4. Voir §6 pour l'explication : ce n'est pas un plafond
+à 3 qui a été appliqué (auquel cas les 3 premières auraient produit un
+événement), mais un rejet en bloc des 4.
 
 ## 5. Portée et limites du correctif proposé
 
@@ -161,3 +174,46 @@ maximum annoncées par les règles.
   aussi revoir la cohérence du comportement du formulaire PHP (message
   d'erreur explicite au lieu d'un champ simplement masqué), hors du
   périmètre Java de ce rapport.
+
+## 6. Correction : la limite est en réalité appliquée par `ReceptionOrdres.getOrdres()`
+
+L'exécution du test décrit en §4 sur les tours réels 10 et 11 a mis en
+évidence un écart entre le résultat prévu (§4, "4 lignes... au lieu
+des 3 maximum") et le résultat observé (aucune des 4 missions
+exécutée). Ceci a conduit à relire `ReceptionOrdres.java` au-delà des
+seules méthodes `services_speciaux`/`effectuerMissionSpeciale`
+examinées en §2 :
+
+```java
+// ReceptionOrdres.java:146-158 (getOrdres(), appelée avant tout traitement)
+if (... || ((index == Const.ORDRE_SERVICES_SPECIAUX) &&
+                (a.size() > Const.NOMBRE_LIMITE_SERVICES_SPECIAUX)) || ...) {
+    a = new ArrayList();
+    Univers.ajouterErreur(c[iC].getNomNumeroHtml(), "ER_ORDRE_0002",
+            Const.NOMS_TABLES_ORDRES[index]);
+}
+```
+
+```java
+// Const.java:755
+NOMBRE_LIMITE_SERVICES_SPECIAUX = 3;
+```
+
+`getOrdres()` est appelée par `resoudreMethode()` **avant** que
+`services_speciaux(o)` (et donc `effectuerMissionSpeciale`) ne soit
+invoquée pour chaque ligne. Si le nombre de lignes en base pour ce
+commandant dépasse 3, elle retourne un tableau **vide** : aucune des 4
+missions soumises au tour 10 n'a donc jamais atteint
+`Commandant.effectuerMissionSpeciale`, ce qui explique précisément
+l'absence totale d'événement observée en §4 — pas un plafonnement aux
+3 premières, un rejet du lot entier.
+
+**Conséquence pour le joueur** : contourner le formulaire pour ajouter
+une 4ᵉ mission ne rapporte rien — cela fait perdre les 3 missions
+légitimes en plus de la quatrième.
+
+Voir `doc/audit-regles-vs-code.md` §5.4 sur la branche
+`audit/regles-vs-code-technologies` pour la version complète et à jour
+de cette correction, incluse dans le même document que les deux cas
+jumeaux (`doc/fix/limite-enchere-lieutenant-par-tour.md` et
+`doc/fix/limite-don-technologie-par-tour.md`).
