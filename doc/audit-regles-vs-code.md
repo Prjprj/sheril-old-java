@@ -579,64 +579,129 @@ la met aussi à 0% (`Const.CHANCE_TROUVER_COMPETENCE_HEROS[0][4] = 0`),
 sans exception pour cette race. Cohérent avec la désactivation générale
 du marchandage, mais en écart avec le chiffre publié dans les règles.
 
-### 4.6 [Écart confirmé] Aucune limite d'"une seule enchère par tour" côté Java
+### 4.6 [Réfuté par lecture complémentaire, puis par preuve sur données réelles] La limite "une seule enchère par tour" est bien appliquée — à un autre niveau que celui d'abord examiné
 
-Les règles (§8.1) : *"Un commandant ne peut faire qu'une seule enchère
-par tour."*
+**Ce paragraphe documentait initialement un écart confirmé ; il s'est
+révélé faux après une vérification plus poussée, déclenchée par une
+analyse de données de partie réelles. Conservé et corrigé plutôt que
+supprimé, conformément au principe du dépôt de documenter aussi les
+hypothèses réfutées.**
 
-`ReceptionOrdres.enroler_lieutenant` (`ReceptionOrdres.java:495-529`,
-cité de nouveau en §4.7 pour le doublement de l'offre, correctement
-implémenté par ailleurs) traite chaque ordre indépendamment, indexé par
-le lieutenant visé (`offresLieutenants`, une `Map` **par lieutenant**,
-pas par commandant) :
+L'analyse initiale portait uniquement sur
+`ReceptionOrdres.enroler_lieutenant` (`ReceptionOrdres.java:495-529`),
+qui traite en effet chaque ordre indépendamment, indexé par le
+lieutenant visé (`offresLieutenants`, une `Map` par lieutenant, pas par
+commandant) — sans aucune vérification du nombre d'enchères déjà
+passées par le commandant courant. Cette lecture était correcte, mais
+**incomplète** : elle ne portait que sur le corps de la méthode
+appelée pour *chaque ligne d'ordre*, pas sur la boucle qui décide
+*quelles lignes lui sont transmises*.
+
+Cette boucle existe dans `ReceptionOrdres.resoudreMethode()` et
+`ReceptionOrdres.getOrdres()`, jamais consultées lors de la première
+passe :
 
 ```java
-// ReceptionOrdres.java:507-508
-if (!offresLieutenants.containsKey(o[1])) {
-    offresLieutenants.put(o[1], o[0] + "*" + c[iC].getNumero());
+// ReceptionOrdres.java:146-158 (getOrdres(), appelée avant resoudreMethode())
+if (((index == Const.ORDRE_ENROLER_LIEUTENANT) && (a.size() > Const.NOMBRE_LIMITE_ENROLER_LIEUTENANT))
+        || ((index == Const.ORDRE_SERVICES_SPECIAUX) && (a.size() > Const.NOMBRE_LIMITE_SERVICES_SPECIAUX))
+        || ((index == Const.ORDRE_DON_TECHNOLOGIE) && (a.size() > Const.NOMBRE_LIMITE_DON_TECHNOLOGIE))
+        || ((index == Const.ORDRE_CREER_PLAN) && (a.size() > Const.NOMBRE_LIMITE_CREATION_PLAN))
+        || ((index == Const.ORDRE_CREER_STRATEGIE) && (a.size() > Const.NOMBRE_LIMITE_CREATION_STRATEGIE))) {
+    a = new ArrayList();
+    Univers.ajouterErreur(c[iC].getNomNumeroHtml(), "ER_ORDRE_0002",
+            Const.NOMS_TABLES_ORDRES[index]);
+}
 ```
 
-Rien n'empêche un même commandant de soumettre plusieurs ordres
-`enroler_lieutenant` ciblant des lieutenants différents dans le même
-tour : chacun est traité et peut aboutir indépendamment, permettant en
-théorie de remporter plusieurs enchères en un seul tour — contraire à
-la règle d'une seule enchère par tour.
+```java
+// ReceptionOrdres.java:203-214 (resoudreMethode(), garde-fou redondant par index)
+if(index == Const.ORDRE_ENROLER_LIEUTENANT && j > 0){
+    c[iC].ajouterErreur("ER_COMMANDANT_ACHETER_LIEUTENANT_0002");
+    continue;
+}
+if(index == Const.ORDRE_CREER_STRATEGIE && j > 0){
+    c[iC].ajouterErreur("ER_COMMANDANT_CREER_STRATEGIE_0002");
+    continue;
+}
+if(index == Const.ORDRE_SERVICES_SPECIAUX && j > 2){
+    c[iC].ajouterErreur("ER_COMMANDANT_MISSION_SPECIALE_0002");
+    continue;
+}
+```
 
-Comme pour les écarts §5.4 et §8.2, le formulaire PHP standard masque
-son propre champ de saisie dès qu'un ordre `enroler_lieutenant` existe
-déjà pour ce commandant ce tour-ci
-(`php/ordres/fr/choix/enroler_lieutenant.txt:2-4`,
-`if($nb_lignes<1)`) — sans contrôle équivalent côté script
-d'insertion générique (§13.2), donc sans garantie en cas de requête
-directe.
+Et les constantes correspondantes correspondent très exactement aux
+règles :
 
-*Suites données à cet écart (postérieures à l'audit initial) :*
+```java
+// Const.java:754-758
+NOMBRE_LIMITE_ENROLER_LIEUTENANT = 1;
+NOMBRE_LIMITE_SERVICES_SPECIAUX = 3;
+NOMBRE_LIMITE_DON_TECHNOLOGIE = 1;
+NOMBRE_LIMITE_CREATION_PLAN = 1;
+NOMBRE_LIMITE_CREATION_STRATEGIE = 1;
+```
 
-- **Vérifié empiriquement par exécution manuelle, côté PHP/navigateur
-  uniquement** (les joueurs n'ayant pas accès au Java) : après une
-  première offre soumise normalement via le formulaire (masqué dès
-  lors, `if($nb_lignes<1)`), une seconde offre sur un lieutenant
-  différent a été envoyée depuis la console JavaScript du navigateur en
-  `POST` direct vers `index.php3?table=enroler_lieutenant` (même
-  session, sans repasser par le formulaire). Résultat observé : aucune
-  erreur à l'exécution, et les **deux** ordres apparaissent ensuite
-  dans `index.php3?table=list_ordres` — confirmant que rien côté
-  serveur (script d'insertion générique `insert.txt`) ne revérifie la
-  limite que l'UI se contente de masquer. La partie Java de l'écart
-  (attribution effective des deux lieutenants au même commandant par
-  `reglerEncheres()` en fin de tour) reste, elle, établie par lecture
-  du code plutôt que par test — non exécutée à ce stade, une procédure
-  a été rédigée (mock de `Univers`, `ReceptionOrdres` instancié sans
-  passer par son constructeur qui ouvre une connexion JDBC réelle, via
-  `Mockito.mock(ReceptionOrdres.class, Mockito.CALLS_REAL_METHODS)` puis
-  initialisation des champs privés par réflexion) pour une itération
-  ultérieure.
-- **Rapport de détection et correctif proposé** : `doc/fix/limite-enchere-lieutenant-par-tour.md`
-  sur la branche `fix/enchere-lieutenant-limite-par-tour` (créée depuis
-  `develop`), avec le résultat du test ci-dessus détaillé en §4, un
-  diff de correctif proposé mais **non appliqué**, et un point ouvert
-  signalé sur la cohérence à conserver avec la modification d'une
-  enchère existante côté formulaire PHP.
+Le mécanisme de `getOrdres()` est plus radical qu'un simple
+plafonnement : si le nombre de lignes en base pour ce type d'ordre et
+ce commandant **dépasse** la limite, la totalité des lignes est
+écartée (`a = new ArrayList()`) — pas seulement l'excédent. Un
+commandant qui parvient à insérer une 4ᵉ ligne `services_speciaux` ou
+une 2ᵉ ligne `enroler_lieutenant`/`transferer_technologie` (via le
+contournement décrit plus bas) ne gagne donc rien : il perd
+**l'intégralité** de ses ordres de ce type pour le tour, y compris ceux
+qui, seuls, auraient été parfaitement valides.
+
+**Preuve sur données réelles de partie** (tours 10 et 11, voir
+`data/tour10/dump.sql` et `data/tour11/rapports/1tour11/rapport.xml`
+sur ce dépôt) : après que le contournement décrit en §13.2 (POST direct
+depuis la console, hors formulaire masqué) a bien inséré 4 lignes dans
+`services_speciaux` et 2 lignes dans `transferer_technologie` pour le
+commandant 1 au tour 10 —
+
+```
+INSERT INTO `services_speciaux` VALUES (1, '0_15_11', 0, 100);
+INSERT INTO `services_speciaux` VALUES (1, '0_15_10', 0, 100);
+INSERT INTO `services_speciaux` VALUES (1, '0_15_13', 0, 100);
+INSERT INTO `services_speciaux` VALUES (1, '0_13_28', 0, 100);
+INSERT INTO `transferer_technologie` VALUES (1, 2, 'robotI', 0);
+INSERT INTO `transferer_technologie` VALUES (1, 2, 'transfoI', 0);
+```
+
+— le rapport individuel du commandant 1 pour le tour suivant
+(`rapport.xml`, section `<messages>`) ne contient **aucun** événement
+de mission spéciale ni de don de technologie, alors qu'un traitement
+normal (même partiel, même en échec) en aurait produit au moins un.
+Recherche complémentaire dans le dump binaire sérialisé Java
+(`data/tour11/donnees/comm.txt`) : les codes `robotI` et `transfoI`
+n'y apparaissent chacun qu'**une seule fois** — la seule occurrence
+correspondant aux technologies déjà connues du commandant 1 lui-même
+(visibles dans `<technologies><connue .../>` du même rapport), sans
+seconde occurrence qui indiquerait que le commandant 2 (bénéficiaire
+visé) les ait reçues. Les deux constats convergent : aucun des 6
+ordres excédentaires n'a été exécuté, cohérent avec le comportement de
+`getOrdres()` qui écarte tout le lot dès que la limite est dépassée.
+
+Le contournement décrit ci-dessous reste réel et vérifié — un joueur
+peut bien insérer plus de lignes que le formulaire ne le laisse
+supposer :
+
+*(point technique conservé de l'analyse initiale, toujours exact)* : le
+formulaire PHP standard masque son propre champ de saisie dès qu'un
+ordre `enroler_lieutenant` existe déjà pour ce commandant ce tour-ci
+(`php/ordres/fr/choix/enroler_lieutenant.txt:2-4`, `if($nb_lignes<1)`),
+et le script d'insertion générique (`insert.txt`) accepte sans
+broncher une ligne supplémentaire envoyée hors formulaire — **mais
+cette ligne excédentaire est sans effet en jeu**, et pire, elle annule
+l'ordre légitime qui l'accompagnait.
+
+*Chronologie de cette correction* : vérifié empiriquement côté
+PHP/navigateur (deux offres acceptées en base, cf. commit historique de
+cette section) ; un rapport de bug et un correctif ont été proposés sur
+la branche `fix/enchere-lieutenant-limite-par-tour` en présumant
+l'écart réel ; **ce rapport a depuis été corrigé pour refléter la
+présente réfutation** (voir `doc/fix/limite-enchere-lieutenant-par-tour.md`
+sur cette branche).
 
 ### 4.7 Points conformes aux règles (vérifiés, pour mémoire)
 
@@ -749,37 +814,39 @@ autre race"* est en revanche correctement implémenté
 (`ajouterReputation(-300)`, cf. §3.1 de ce document) et cohérent avec la
 règle.
 
-### 5.4 [Écart confirmé] Aucune limite de "3 ordres de mission spéciale par tour"
+### 5.4 [Réfuté par lecture complémentaire, puis par preuve sur données réelles] La limite "3 missions spéciales par tour" est bien appliquée
 
-Les règles (§7.3) : *"À chaque tour, vous pouvez donner 3 ordres de
-mission."*
+**Écart initialement confirmé, puis réfuté — conservé et corrigé
+plutôt que supprimé.** Voir la correction jumelle et détaillée en
+§4.6 (même cause : l'analyse initiale ne portait que sur
+`Commandant.effectuerMissionSpeciale` et `ReceptionOrdres.services_speciaux`,
+pas sur la boucle de dispatch `ReceptionOrdres.resoudreMethode()`/
+`getOrdres()` qui les appelle).
 
-`Commandant.effectuerMissionSpeciale` (`Commandant.java:3016`) traite
-chaque ordre `services_speciaux` reçu sans compteur ni limite, et
+`Commandant.effectuerMissionSpeciale` (`Commandant.java:3016`) et
 `ReceptionOrdres.services_speciaux` (`ReceptionOrdres.java:547-550`)
-appelle cette méthode une fois par ligne d'ordre sans plafond. Recherche
-exhaustive d'un mécanisme générique de limitation du nombre d'ordres
-d'un même type par tour dans tout `src/main/java` : aucun résultat.
+ne comportent en effet eux-mêmes aucun compteur — cette partie de la
+lecture initiale était juste. Mais `ReceptionOrdres.getOrdres()`
+(`ReceptionOrdres.java:146-158`) écarte la totalité des lignes
+`services_speciaux` d'un commandant dès que leur nombre dépasse
+`Const.NOMBRE_LIMITE_SERVICES_SPECIAUX = 3`, et
+`resoudreMethode()` (`ReceptionOrdres.java:211-214`) ignore par
+sécurité redondante toute ligne au-delà de la 3ᵉ (`j > 2`).
 
-Vérification complémentaire côté PHP (réception/stockage des ordres) :
-`php/divers/creer_tables.php3:276` crée la table `services_speciaux`
-(`NUMERO, SYSTEME, TYPE, PLANETE`) sans contrainte d'unicité ni de
-comptage, `php/ordres/fr/affiche/services_speciaux.txt` ne fait que
-formater le texte de confirmation d'un ordre déjà accepté, et aucun des
-fichiers référençant `services_speciaux`
-(`php/ordres/fr/ordres.txt`, `php/ordres/liste/menu.php3`) ne porte de
-logique de plafonnement. Aucune limite n'a été trouvée à aucun des deux
-niveaux explorés (traitement Java des ordres, définition/stockage PHP) :
-un commandant peut donner plus de 3 ordres de mission spéciale par tour.
-Ceci fait écho au constat similaire déjà relevé sur la limite de 999
-unités par transfert inter-système (§2.3) : les plafonds "par tour"
-annoncés dans les règles ne sont pas appliqués sur ce dépôt.
+**Preuve sur données réelles de partie (tour 10 → rapport du tour 11,
+détaillée en §4.6)** : 4 lignes `services_speciaux` insérées pour le
+commandant 1 via le contournement du formulaire décrit en §13.2 ; le
+rapport individuel du tour suivant ne contient **aucun** événement de
+mission spéciale (succès ou échec) — cohérent avec l'écartement complet
+du lot par `getOrdres()`, pas avec un traitement des 3 premières
+lignes ni des 4.
 
-*Mise à jour (§13.2) : le formulaire PHP standard de cet ordre masque
-en réalité son propre champ de saisie dès que 3 ordres existent déjà
-pour ce commandant ce tour-ci — l'écart ci-dessus reste réel au niveau
-du code (Java et du script d'insertion générique PHP), mais n'a pas
-d'effet observable pour un joueur utilisant l'interface web standard.*
+L'écart réel n'est donc pas l'absence de limite, mais — comme pour
+l'enrôlement de lieutenant — le fait que dépasser la limite via le
+contournement du formulaire PHP (toujours réel, cf. §13.2) ne profite
+pas au joueur : cela annule l'intégralité de ses missions du tour,
+y compris celles qui, seules, auraient été valides, au lieu de
+simplement plafonner à 3.
 
 ### 5.5 [Écart confirmé, majeur] Gain de réputation automatique par tour : 0 à 9 dans le code, 50 à 100 dans les règles
 
@@ -1211,18 +1278,35 @@ conforme à §6.1.2), la convergence des prix vers la moyenne de l'univers
 ne fonctionne en pratique jamais pour l'immense majorité des postes
 commerciaux du jeu.
 
-### 8.2 [Écart confirmé] Aucune limite d'une technologie cédée par tour
+### 8.2 [Réfuté par lecture complémentaire, puis par preuve sur données réelles] La limite "une technologie cédée par tour" est bien appliquée
 
-Les règles (§6.2) : *"Vous ne pouvez pas céder plus d'une technologie
-par tour."*
+**Écart initialement confirmé, puis réfuté — conservé et corrigé
+plutôt que supprimé.** Même cause et même correction jumelle qu'en
+§4.6 et §5.4 : l'analyse initiale portait uniquement sur
+`Commandant.transfertTechnologie` (`Commandant.java:2491-2530`), qui ne
+comporte en effet lui-même aucun compteur — juste, mais incomplet.
+`ReceptionOrdres.getOrdres()` (`ReceptionOrdres.java:146-158`) écarte
+la totalité des lignes `transferer_technologie` d'un commandant dès que
+leur nombre dépasse `Const.NOMBRE_LIMITE_DON_TECHNOLOGIE = 1`.
 
-`Commandant.transfertTechnologie` (`Commandant.java:2491-2530`) ne
-comporte aucun compteur ni verrou empêchant d'appeler cette méthode
-plusieurs fois dans le même tour (vers la même cible ou des cibles
-différentes) — troisième occurrence du même constat que les plafonds
-"par tour" déjà relevés et absents ailleurs dans le code (999 unités
-par transfert inter-système en §2.3, 3 missions spéciales par tour en
-§5.4).
+**Preuve sur données réelles de partie (tour 10 → rapport du tour 11,
+détaillée en §4.6)** : 2 lignes `transferer_technologie` insérées pour
+le commandant 1 (`robotI` et `transfoI` vers le commandant 2) via le
+contournement du formulaire décrit en §13.2 ; le rapport individuel du
+tour suivant ne contient aucun événement de don de technologie, et les
+deux codes technologiques n'apparaissent dans les données sérialisées
+du tour suivant qu'à raison d'une seule occurrence chacun — celle déjà
+connue du commandant 1 lui-même, pas une seconde occurrence chez le
+commandant 2 bénéficiaire. Le don n'a donc pas eu lieu, dans un sens
+comme dans l'autre : ni le premier don (légitime), ni le second
+(excédentaire) — cohérent avec l'écartement complet du lot par
+`getOrdres()`.
+
+L'écart réel n'est donc pas l'absence de limite, mais — comme pour les
+deux cas jumeaux — le fait que dépasser la limite via le contournement
+du formulaire PHP (toujours réel, cf. §13.2) fait perdre au joueur son
+don légitime en plus de l'excédentaire, au lieu de simplement le
+plafonner à un.
 
 ### 8.3 Points conformes aux règles (vérifiés, pour mémoire)
 
@@ -1744,8 +1828,9 @@ si le nombre est inférieur au plafond documenté par les règles.**
   déjà enregistrés ce tour — conforme à la règle des 3 missions par
   tour. L'écart §5.4 est donc lui aussi mitigé côté formulaire standard.
 
-**Mais cette protection reste purement côté interface, pas côté
-serveur.** L'insertion effective de chaque ordre passe par un unique
+**Cette protection côté formulaire n'est pas dupliquée dans le script
+d'insertion PHP** — celui-ci accepte donc une ligne excédentaire sans
+broncher. L'insertion effective de chaque ordre passe par un unique
 script générique, commun à tous les types d'ordres :
 
 ```php
@@ -1759,16 +1844,37 @@ script générique, commun à tous les types d'ordres :
 ```
 
 Ce script insère sans jamais revérifier le nombre de lignes déjà
-présentes pour ce commandant. Une requête `POST` adressée directement à
-`index.php3?table=transferer_technologie` (ou `services_speciaux`),
-sans passer par la page qui masque le formulaire, insère la ligne sans
-aucun contrôle — le plafond n'existe donc que parce que l'interface
-standard ne propose plus le champ de saisie, pas parce que le serveur
-refuserait la requête. Pour un joueur qui utilise l'interface web
-normalement, les écarts §5.4 et §8.2 n'ont donc pas d'effet observable
-en pratique ; ils restent réels au niveau du code (Java et du script
-d'insertion générique PHP) et exploitables par quiconque contourne le
-formulaire.
+présentes pour ce commandant : une requête `POST` adressée directement
+à `index.php3?table=transferer_technologie` (ou `services_speciaux`),
+sans passer par la page qui masque le formulaire, insère bel et bien
+la ligne excédentaire en base — **vérifié empiriquement** sur données
+de partie réelles (tour 10, cf. §4.6, §5.4, §8.2 : les lignes
+excédentaires apparaissent bien dans `data/tour10/dump.sql`).
+
+**Mais, correction importante par rapport à une première rédaction de
+cette section : cette absence de contrôle dans `insert.txt` ne signifie
+pas que le plafond des règles n'est pas appliqué.** Une lecture
+complémentaire de `ReceptionOrdres.getOrdres()`/`resoudreMethode()`
+(détaillée en §4.6) montre qu'un **second** contrôle, purement côté
+Java cette fois, existe à la résolution du tour : si le nombre de
+lignes en base pour un type d'ordre dépasse la constante
+`Const.NOMBRE_LIMITE_*` correspondante (`ENROLER_LIEUTENANT=1`,
+`SERVICES_SPECIAUX=3`, `DON_TECHNOLOGIE=1`, `CREATION_PLAN=1`,
+`CREATION_STRATEGIE=1`), la **totalité** des lignes de ce commandant
+pour ce type est écartée avant traitement — confirmé sur données
+réelles de partie (§4.6, §5.4, §8.2 : aucun des 6 ordres excédentaires
+soumis lors du tour 10 n'a été exécuté au tour suivant).
+
+Donc : pour un joueur qui contourne le formulaire, la ligne
+excédentaire est bien acceptée par PHP (le "bug" côté interface est
+réel), mais elle n'a aucun effet en jeu — pire, elle fait perdre au
+joueur l'intégralité de ses ordres légitimes du même type ce tour-ci,
+puisque `getOrdres()` ne garde pas les N premiers, il écarte tout dès
+que N+1 est atteint. Ceci concerne les cinq types d'ordres listés
+ci-dessus (voir aussi §13.7, également corrigée) ; ça ne concerne pas
+la limite de 999 unités par transfert inter-système (§2.3), pour
+laquelle aucun mécanisme équivalent — dans `getOrdres()` ou ailleurs —
+n'a été trouvé : ce plafond-là reste un écart réel, non mitigé.
 
 ### 13.3 [Nuance sur l'écart §7.1] Le menu déroulant des missions spéciales ne propose que les systèmes détectés
 
@@ -1861,37 +1967,52 @@ purement informatif ("combien de joueurs ont fini de jouer") sans
 effet sur le calendrier des tours — et donc sans contradiction avec la
 règle du rythme hebdomadaire fixe.
 
-### 13.7 [Comportement non documenté] Deux autres ordres limités à une soumission par tour, sans base dans les règles consultées
+### 13.7 [Corrigé] Deux autres ordres limités à une soumission par tour — confirmés implémentés côté Java, pas seulement côté PHP
+
+**Ce paragraphe concluait initialement que ces limites n'avaient "pas
+de contrepartie vérifiée côté Java, non recherchée" ; la lecture
+complémentaire de `ReceptionOrdres.getOrdres()` qui a corrigé §4.6,
+§5.4 et §8.2 répond en réalité aussi à ce point resté ouvert.**
 
 Passage systématique des fichiers `php/ordres/fr/choix/*.txt` à la
-recherche du même motif de comptage (`$nb_lignes`) que celui déjà
-identifié en §13.2 et §4.6, pour vérifier s'il existe encore ailleurs.
-Deux occurrences supplémentaires, sans rapport avec une limite
-documentée dans les règles consultées :
+recherche du même motif de comptage (`$nb_lignes`) que celui identifié
+en §13.2 et §4.6. Deux occurrences supplémentaires :
 
 - **`creer_plan.txt`** (conception d'un nouveau plan de vaisseau) :
-  `$max = 1`, formulaire masqué au-delà. Les règles (§4.1.3 des
-  constructions) précisent seulement qu'*"un seul tour suffit"* pour
-  concevoir et commencer à construire un vaisseau, sans jamais limiter
-  le nombre de plans conçus par tour.
+  `$max = 1`, formulaire masqué au-delà.
 - **`creer_strategie.txt`** (création d'une stratégie de combat) :
-  même motif, `$max = 1`. Les règles (§5.3) ne mentionnent aucune
-  limite de fréquence pour la création de stratégies.
+  même motif, `$max = 1`.
 
-`changer_capitale.txt` est également limité à 1 par tour, mais cette
-fois cohérent avec la règle elle-même (*"vous pouvez désigner un autre
-système à la place à chaque tour"* — un seul choix de capitale ayant un
-sens par tour) ; pas compté comme écart ou comportement non documenté.
+Les règles consultées (§4.1.3 des constructions pour les plans de
+vaisseau, §5.3 pour les stratégies de combat) restent silencieuses sur
+une quelconque limite de fréquence pour ces deux actions — ces
+restrictions ne corrigent donc toujours aucune règle explicite. Mais,
+contrairement à la conclusion initiale, elles **ont bien une
+contrepartie côté Java**, exactement le même mécanisme que celui
+découvert pour §4.6/§5.4/§8.2 :
+
+```java
+// Const.java:757-758
+NOMBRE_LIMITE_CREATION_PLAN = 1;
+NOMBRE_LIMITE_CREATION_STRATEGIE = 1;
+```
+
+`ReceptionOrdres.getOrdres()` applique la même règle "au-delà de la
+limite, tout le lot est écarté" pour `ORDRE_CREER_PLAN` et
+`ORDRE_CREER_STRATEGIE` que pour les trois cas déjà détaillés en §4.6.
+Ce sont donc des limites **délibérément implémentées** par le code
+(cohérentes de bout en bout, formulaire PHP et résolution Java), même
+si les règles elles-mêmes ne les documentent pas explicitement — à
+mi-chemin entre "comportement non documenté" et "paramétrage interne
+du jeu non exposé dans la documentation".
+
+`changer_capitale.txt` est également limité à 1 par tour, cohérent
+avec la règle elle-même (*"vous pouvez désigner un autre système à la
+place à chaque tour"* — un seul choix de capitale ayant un sens par
+tour) ; pas compté comme écart ou comportement non documenté.
 `diviser_flotte.txt`, à l'inverse, ne comporte aucun plafond de ce
 type, cohérent avec *"une flotte peut être divisée autant de fois que
 vous voulez au cours d'un même tour"* (§4.2) — vérifié conforme.
-
-Ces deux restrictions (plan de vaisseau, stratégie) ne contredisent pas
-une règle explicite (les règles sont simplement silencieuses sur la
-fréquence), donc non comptées comme écarts confirmés — mais elles
-limitent en pratique une action que les règles ne semblent pas
-borner, et n'ont pas de contrepartie vérifiée côté Java (non
-recherchée pour ces deux ordres spécifiquement).
 
 ---
 
@@ -1928,9 +2049,7 @@ que centralisé dans une table de données.
 | 3.6 | Seuil d'éradication `≤30` au lieu de `<30` | Opérateur de comparaison |
 | 4.3 | Immortalité `1 + niveau×20` au lieu de `niveau×20` | `+1` câblé dans la formule de `Leader.mourir()` |
 | 4.4 | Pas d'exception clonage héros/gouverneur de départ | Vérification absente |
-| 4.6 | Aucune limite d'une seule enchère de lieutenant par tour | Contrôle absent (`Map` indexée par lieutenant, pas par commandant), masqué côté PHP (§13.2) |
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
-| 5.4 | Aucune limite de 3 missions spéciales par tour | Contrôle absent, masqué (pas corrigé) côté formulaire PHP standard (§13.2) |
 | 5.5 | Gain de réputation automatique 0-9 par tour au lieu de 50-100 | Littéral `Univers.getInt(10)` dans `DeroulementDuTour.java`, sans le forfait fixe de 50 |
 | 5.6 | Malus Esclavagiste `-2×planètes` au lieu de `-(planètes)²` | Littéral `*2` réutilisé par erreur dans `DeroulementDuTour.java` |
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
@@ -1939,7 +2058,6 @@ que centralisé dans une table de données.
 | 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent, mitigé par le menu déroulant PHP (§13.3) |
 | 7.2 | Vol de technologie vole une techno déjà connue et l'octroie intégralement | Méthode entière (`trouverTechnoAVoler`) sur la mauvaise source de données |
 | 8.1 | Convergence du prix des marchandises inopérante sauf taxation 0% | Division entière `(100-taux)/100` dans `Possession.evolutionPosteCo` |
-| 8.2 | Aucune limite d'une technologie cédée par tour | Contrôle absent, masqué (pas corrigé) côté formulaire PHP standard (§13.2) |
 | 9.1 | Boucle de tirs multiples désactivée (`i <= 0`) | Borne de boucle câblée en dur dans `Combat.java`, valeur réelle commentée |
 | 9.3 | Fiabilité de l'arme jamais appliquée (combat spatial), désactivée ailleurs | Aucun appel dans `Vaisseau.tir` ; `if (true /* ... */)` dans `ConstructionPlanetaire.tir` |
 | 9.4 | Formule d'inversion de position Y (stratégie, défenseur) incorrecte | Terme `Const.COMBAT_Y_MAX` manquant dans `Combat.java` |
@@ -1976,7 +2094,7 @@ point.*
 
 ### 14.3 Bilan
 
-38 écarts confirmés au total (§14.1 : 32 lignes relevant au moins en
+35 écarts confirmés au total (§14.1 : 29 lignes relevant au moins en
 partie de la logique du code ; §14.2 : 11 lignes comportant une
 composante purement paramétrique — une valeur ou une table dans
 `Const.java`/`Messages.java` suffirait à les corriger ; l'écart 6.1
@@ -2001,6 +2119,27 @@ technologie entière au lieu de transférer des points de recherche
 faible qu'annoncé (§5.5) — les six sont des bugs de code purs
 (division/boucle/formule/mauvaise source de données/vérification
 désactivée), pas des erreurs de configuration.
+
+**Trois écarts initialement recensés (l'enrôlement de lieutenant §4.6,
+les missions spéciales §5.4, le don de technologie §8.2) ont depuis été
+réfutés** par une lecture complémentaire de
+`ReceptionOrdres.getOrdres()`/`resoudreMethode()` — un niveau de
+dispatch des ordres non examiné lors de l'analyse initiale, qui
+applique bien les plafonds "par tour" annoncés par les règles, en
+écartant intégralement (pas seulement l'excédent) les ordres d'un
+commandant qui les dépasse. Cette réfutation a été confirmée sur des
+données de partie réelles (`data/tour10/dump.sql`,
+`data/tour11/rapports/1tour11/rapport.xml`) après que l'utilisateur a
+exécuté le contournement du formulaire PHP décrit en §13.2 sur ces deux
+types d'ordres et constaté, à juste titre, que les ordres excédentaires
+n'avaient produit aucun effet au tour suivant. Les trois sections
+concernées ont été conservées et corrigées plutôt que supprimées,
+conformément au principe du dépôt de documenter aussi les hypothèses
+réfutées ; les rapports de bug correspondants
+(`doc/fix/limite-enchere-lieutenant-par-tour.md`,
+`doc/fix/limite-missions-speciales-par-tour.md`,
+`doc/fix/limite-don-technologie-par-tour.md`, sur leurs branches
+respectives) ont été mis à jour dans le même sens.
 
 ---
 
