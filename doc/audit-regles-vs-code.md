@@ -2014,6 +2014,67 @@ tour) ; pas compté comme écart ou comportement non documenté.
 type, cohérent avec *"une flotte peut être divisée autant de fois que
 vous voulez au cours d'un même tour"* (§4.2) — vérifié conforme.
 
+### 13.8 Vérification systématique : le mécanisme de rejet en bloc ne s'applique qu'à 5 types d'ordres, aucun autre écart de l'audit n'est concerné
+
+Suite à la réfutation des écarts §4.6/§5.4/§8.2, vérification demandée
+de la portée réelle du mécanisme découvert
+(`ReceptionOrdres.getOrdres()`) sur l'ensemble des ~60 types d'ordres du
+jeu (`Const.NOMS_TABLES_ORDRES`), pas seulement les trois cas déjà
+rencontrés.
+
+**Recherche exhaustive des constantes `Const.NOMBRE_LIMITE_*`** :
+exactement cinq existent —
+`ENROLER_LIEUTENANT`, `SERVICES_SPECIAUX`, `DON_TECHNOLOGIE`,
+`CREATION_PLAN`, `CREATION_STRATEGIE` (`Const.java:754-758`) — les
+mêmes cinq déjà couvertes par la correction du §4.6 (les trois premières)
+et par §13.7 (les deux dernières). Aucune sixième occurrence.
+
+**Recherche exhaustive des vérifications par index dans
+`resoudreMethode()`** (le garde-fou redondant `j > 0`/`j > 2`) :
+exactement trois — `ORDRE_ENROLER_LIEUTENANT`, `ORDRE_CREER_STRATEGIE`,
+`ORDRE_SERVICES_SPECIAUX` (`ReceptionOrdres.java:203-214`) — un
+sous-ensemble des cinq ci-dessus (`ORDRE_DON_TECHNOLOGIE` et
+`ORDRE_CREER_PLAN` ne reposent que sur le rejet en bloc de
+`getOrdres()`, sans garde-fou redondant, sans que cela change le
+résultat observable). Aucune autre occurrence de ce motif.
+
+**Autre filtre découvert dans `getOrdres()`, sans rapport avec les
+écarts de cet audit** : les ordres `ORDRE_LARGUER_MINES` ciblant deux
+fois la même position dans le même lot sont dédupliqués
+(`ReceptionOrdres.java:161-173`) — mécanique différente (déduplication
+par position, pas rejet en bloc par comptage), non documentée dans les
+règles consultées sur le minage, hors périmètre de cet audit (le
+minage de mines n'a pas été spécifiquement audité).
+
+**Cas déjà identifié comme non concerné, reconfirmé** : §2.3 (limite de
+999 unités par transfert inter-système, `charger_cargo`) n'a ni
+constante `NOMBRE_LIMITE_*`, ni entrée `ORDRE_CHARGER_CARGO` définie du
+tout dans `Const.java`, ni aucune autre forme de plafonnement retrouvée
+en relisant intégralement `Commandant.transfererEntreSysteme` — la
+seule borne appliquée à la quantité transférée reste le stock
+disponible (`Math.min(present, nb)`). Ce mécanisme de comptage de
+lignes ne s'applique de toute façon qu'au **nombre d'ordres**, jamais à
+une **valeur** à l'intérieur d'un ordre (comme le sont les 999 unités) —
+même si `charger_cargo` avait fait partie des cinq types couverts,
+cela n'aurait pas plafonné la quantité par transfert. L'écart §2.3
+reste donc entier et confirmé.
+
+**Confirmation méthodologique en passant** : `ReceptionOrdres.deroulementOrdres()`
+(`ReceptionOrdres.java:402-407`) appelle `dumpDatabase()` **avant**
+la boucle de traitement de tous les types d'ordres
+(`for (index = 0; index < Const.BORNE_ORDRES_VISIBLES; index++)
+resoudreMethode();`) — ceci confirme que `data/tourN/dump.sql` est bien
+un instantané pris *avant* résolution du tour, cohérent avec la
+méthode d'analyse employée en §4.6/§5.4/§8.2 (comparer le contenu de ce
+dump aux événements du rapport du tour suivant). La boucle elle-même
+parcourt la totalité de `Const.BORNE_ORDRES_VISIBLES` types d'ordres
+sans exception : aucun type d'ordre n'est structurellement ignoré par
+le moteur de résolution.
+
+**Conclusion** : le mécanisme de rejet en bloc découvert n'affecte que
+les cinq cas déjà corrigés dans ce document. Aucun autre écart recensé
+dans les sections précédentes n'est concerné.
+
 ---
 
 ## 14. Synthèse : écarts de logique vs écarts de paramétrage
