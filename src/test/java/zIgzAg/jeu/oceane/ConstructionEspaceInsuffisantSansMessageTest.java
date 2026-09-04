@@ -26,6 +26,11 @@ import static org.mockito.Mockito.*;
  * code émettait un message de succès (EV_COMMANDANT_CONSTRUCTION_0001)
  * portant sur les seules unités effectivement sorties, sans jamais signaler
  * que les autres n'avaient pas pu sortir faute de place.
+ *
+ * Depuis "améliorations combat / encombrements" (#71), la limite d'espace
+ * se calcule sur Batiment.getPointsEncombrement() (= points de construction)
+ * plutôt que sur getPointsDeStructure() — d'où la valeur d'espace libre du
+ * test, dimensionnée sur pointsParUnite et non plus sur la structure.
  */
 class ConstructionEspaceInsuffisantSansMessageTest {
 
@@ -63,8 +68,9 @@ class ConstructionEspaceInsuffisantSansMessageTest {
         when(systeme.getPointsDeConstructionModifie(eq(10), isNull(), eq(possession), eq(position)))
                 .thenReturn(nombreDemande * pointsParUnite);
         when(systeme.getStockMinerai(10)).thenReturn(1_000_000);
-        // espace libre ne permet qu'UNE seule unité (structure = 50) sur les 10 demandées
-        when(systeme.getEspaceLibre(10)).thenReturn(pointsDeStructureParUnite);
+        // espace libre ne permet qu'UNE seule unité : la limite se calcule sur
+        // Batiment.getPointsEncombrement() (= pointsParUnite), pas sur la structure.
+        when(systeme.getEspaceLibre(10)).thenReturn(pointsParUnite);
 
         try (MockedStatic<Univers> univers = mockStatic(Univers.class)) {
             univers.when(() -> Univers.existenceTechnologie(anyString())).thenReturn(true);
