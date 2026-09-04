@@ -353,14 +353,24 @@ présents sont d'équipages de races différentes : le joueur ne peut ni
 prévoir ni influencer lequel sera utilisé autrement qu'en connaissant cet
 ordre interne, contrairement à l'aléatoire annoncé.
 
-### 3.3 [Écart confirmé] Pénalité d'absence de capitale : -16% de stabilité par tour dans le code, -10% annoncé dans les règles
+### 3.3 [Réfuté par mise à jour des règles depuis le dépôt d'origine] Pénalité d'absence de capitale : le code était juste, l'ancienne version des règles avait le mauvais chiffre
 
-Les règles (§2.2) : *"Si vous ne possédez pas de capitale, une pénalité
-de -10 par tour en stabilité est appliquée."*
+**Écart initialement confirmé contre l'ancienne copie de
+`rules/Mise à jour/2. Population.md` présente sur cette branche (héritée
+de `develop`) — réfuté après mise à jour de ce fichier depuis
+`upstream/main`, le dépôt d'origine. Conservé et corrigé plutôt que
+supprimé.**
+
+La version à jour des règles a corrigé le chiffre annoncé, qui vaut
+désormais -16, pas -10 : *"Si vous ne possédez pas de capitale, une
+pénalité de **-16** par tour en stabilité est appliquée sur chaque
+système."*
 
 Le code réutilise la dernière entrée de la table de distance (utilisée
 normalement pour "11 systèmes ou plus" = -16%) au lieu d'une valeur
-dédiée :
+dédiée — un choix d'implémentation qui reste un peu curieux
+(réutiliser une entrée existante plutôt qu'une constante nommée), mais
+dont le résultat numérique est correct :
 
 ```java
 // Possession.java:343-344
@@ -370,9 +380,10 @@ if (c.getCapitale() == null)
 ```
 
 Un commandant sans capitale subit donc -16% de stabilité par tour et par
-système sur l'ensemble de son domaine, et non -10% comme annoncé — un
-écart substantiel puisque c'est justement dans cette situation (perte de
-la capitale) que la stabilité est la plus fragile.
+système — exactement ce que les règles annoncent désormais. Seule
+l'ancienne copie du fichier de règles présente sur cette branche
+affichait -10 ; ce n'était pas un écart entre le code et les règles
+réellement en vigueur.
 
 *Le reste de la table de distance a été vérifié par calcul systématique
 de l'algorithme de recherche (`Possession.java:346-354`) pour chaque
@@ -885,11 +896,70 @@ règle. Les deux formules ne coïncident que pour exactement 2 planètes
 (`2×2 = 2² = 4`) ; au-delà, l'écart se creuse rapidement (10 planètes :
 -20 dans le code contre -100 attendu). Le code semble avoir réutilisé
 par erreur le motif "`×2`" de la politique Loisir voisine
-(`ajouterReputation(nbPlanetes * 2)`, correcte, cf. §5.7) au lieu
+(`ajouterReputation(nbPlanetes * 2)`, correcte, cf. §5.10) au lieu
 d'élever `nbPlanètes` au carré comme le prévoit spécifiquement la
 politique Esclavagiste.
 
-### 5.7 Points conformes aux règles (vérifiés, pour mémoire)
+### 5.7 [Nouveau domaine, écart confirmé] Opinion entre espèces : transfert de flotte à 5× la puissance au lieu de 2×
+
+La mise à jour de `rules/Mise à jour/2. Population.md` depuis
+`upstream/main` (le dépôt d'origine, cf. §11.2/§3.3 pour le contexte de
+cette mise à jour) a ajouté une section entièrement nouvelle, §2.4.4
+"L'opinion entre les espèces", jusque-là absente de la copie des règles
+présente sur cette branche — domaine non audité jusqu'ici. Elle détaille
+un barème de modification de l'opinion inter-espèces
+(`Univers.ajouterRelationRaces`) déclenché par diverses actions.
+
+Pour le don d'une flotte, la règle est explicite : *"Transfert d'une
+flotte à un autre commandant | +2 x le niveau de puissance de la flotte
+(de 0 à 10)"*.
+
+```java
+// Commandant.java:2623-2625 (transfertFlotte)
+Univers.ajouterRelationRaces(cible.getCapitale(), getRace(),
+        cible.getRace(),
+        5 * Vaisseau.retournerNiveauPuissance(f.getPuissance()));
+```
+
+Le code applique un facteur **5**, pas **2** — le bonus d'opinion
+généré par le don d'une flotte est deux fois et demie plus généreux que
+prévu par les règles. `Vaisseau.retournerNiveauPuissance` est la même
+fonction de niveau de puissance (0-10) déjà vérifiée conforme au
+tableau des règles en §6 (flottes et combats) ; seul le multiplicateur
+appliqué au résultat diverge.
+
+### 5.8 [Nouveau domaine, écart confirmé] Opinion entre espèces : don de centaures divisé par 100 au lieu de 200
+
+La même nouvelle section §2.4.4 précise pour le don de centaures :
+*"Don de centaures à un autre commandant | +(don / 200)"*.
+
+```java
+// Commandant.java:2506-2507 (transfertCentaures)
+Univers.ajouterRelationRaces(cible.getCapitale(), getRace(),
+        cible.getRace(), don / 100);
+```
+
+Le code divise par **100**, pas **200** — le bonus d'opinion généré par
+un don de centaures est le double de ce qu'annoncent les règles.
+
+### 5.9 Points conformes aux règles de la nouvelle section "opinion entre espèces" (vérifiés, pour mémoire)
+
+- **Attaque d'une planète en mode éradication -200, en mode pillage
+  -50, attaque simple -20** : confirmés,
+  `Const.RELATION_ATTAQUE_ERADICATION = -200`,
+  `Const.RELATION_ATTAQUE_PILLAGE = -50`,
+  `Const.RELATION_ATTAQUE_PLANETE = -20` (`Const.java:304-306`),
+  appliqués dans `Combat.java` pour chacun des trois modes d'attaque.
+- **Transfert d'une technologie +50, transfert d'un système +10** :
+  confirmés, `Const.RELATION_TRANSFERT_TECHNOLOGIE = 50`,
+  `Const.RELATION_TRANSFERT_SYSTEME = 10` (`Const.java:307-308`).
+- **Combat flotte-flotte : -2 × la somme des niveaux de puissance des
+  deux flottes (0 à 10 chacun)** : confirmé exactement,
+  `-2 * (Vaisseau.retournerNiveauPuissance(f1.getPuissance()) +
+  Vaisseau.retournerNiveauPuissance(f2.getPuissance()))`
+  (`Combat.java:886-893`).
+
+### 5.10 Points conformes aux règles (vérifiés, pour mémoire)
 
 - **Formules de revenu des trois types d'alliance** : anarchique 100
   centaures/tour/membre (`Const.REVENU_ALLIANCE_ANARCHIQUE = 100F`),
@@ -1532,34 +1602,53 @@ documentée par les règles mais est cohérente avec la nécessité de
 rattraper le retard de revenus accumulés par les commandants déjà en
 jeu — seule la valeur de référence au tour 0 diverge de la règle.
 
-### 11.2 [Écart confirmé] Technologies de départ par race : sans rapport avec le tableau des règles
+### 11.2 [Réfuté par mise à jour des règles depuis le dépôt d'origine] Technologies de départ par race : la documentation locale était simplement obsolète
 
-Les règles (§0.2) donnent une technologie de départ précise par race :
-Fremens → Station de produits alimentaires I, Atalantes → Station de
-métaux précieux I, Zwaias → Station de composants électroniques,
-Yoksors → Radar III, Fergoks → Station armement et explosifs I +
-Maîtrise militaire II.
+**Écart initialement confirmé par comparaison avec le tableau de
+`rules/Mise à jour/0.2 Avantage de race du commandant.md` alors présent
+sur cette branche — réfuté après mise à jour de ce fichier depuis
+`upstream/main` (le dépôt d'origine, en avance sur `develop` que
+suivait notre branche). Conservé et corrigé plutôt que supprimé.**
+
+L'hypothèse formulée à l'origine ("il s'agit probablement d'un
+rééquilibrage du jeu postérieur à la rédaction de ce tableau... le
+tableau des règles à jour n'a pas été mis à jour en conséquence") s'est
+révélée exacte : la version à jour de ce fichier, récupérée depuis
+`upstream/main`, décrit désormais très exactement ce que le code
+implémente déjà :
+
+```
+Fremens   : Scanner I + Stations de métaux précieux II  — Sidjin
+Atalantes : Canon à plasma I + Stations énergétiques II — Gardien
+Zwaias    : Bombe I + Station d'armement et explosifs II — Bombardier Zwaia
+Yoksors   : Missile I + Stations de logiciels II         — Spiteur
+Fergoks   : Laser I + Stations de composants électroniques II — Feinteur
+```
 
 ```java
-// Const.java:576-583
+// Const.java:576-583 — inchangé, correspond maintenant terme à terme
 public static final String[][] RACE_TECHNOLOGIES = {
-        {"scanI", "metauxII"},   // Fremen  — la règle attend une station alimentaire
-        {"plasmaI", "raffineII"},// Atalante — la règle attend une station de métaux précieux
-        {"bombeI","armeII"},     // Zwaia   — la règle attend une station de composants électroniques
-        {"missI", "infoII"},     // Yoksor  — la règle attend un radar de type III
-        {"laserI", "technoII"},  // Fergok  — la règle attend une station d'armement + maîtrise militaire II
+        {"scanI", "metauxII"},    // Fremen
+        {"plasmaI", "raffineII"}, // Atalante
+        {"bombeI","armeII"},      // Zwaia
+        {"missI", "infoII"},      // Yoksor
+        {"laserI", "technoII"},   // Fergok
         {}
 };
 ```
 
-Aucune des cinq races ne reçoit la ou les technologies annoncées par le
-tableau des règles — le code attribue systématiquement une arme
-(scanner, plasma, bombe, missile, laser) accompagnée d'une technologie
-de deuxième niveau totalement différente de celle documentée. Vu
-l'ampleur et la cohérence du décalage (les cinq lignes divergent), il
-s'agit probablement d'un rééquilibrage du jeu postérieur à la rédaction
-de ce tableau plutôt que d'un bug isolé — mais le tableau des règles à
-jour n'a pas été mis à jour en conséquence.
+Java et la version à jour des règles concordent exactement, technologie
+par technologie et race par race. Seule la copie de ce fichier de
+règles présente sur cette branche (héritée de `develop`, qui n'avait
+pas reçu cette mise à jour) était en retard sur `upstream/main` — pas
+un écart entre le code et les règles réellement en vigueur.
+
+*Le plan de vaisseau restait par ailleurs déjà confirmé exact dans la
+version précédente de ce document (Sidjin, Gardien — voir §13.5) ; le
+nouveau tableau donne également les noms des trois autres plans
+(Bombardier Zwaia, Spiteur, Feinteur), non vérifiés individuellement
+ici faute de descriptions PHP correspondantes disponibles au moment de
+l'audit initial des pages de race.*
 
 ### 11.3 [Écart confirmé] Aucun colonisateur dans la flotte de départ
 
@@ -1912,34 +2001,36 @@ collage de texte dans certains navigateurs, ni a fortiori une requête
 directe). L'écart §2.3 n'est donc pas mitigé, même partiellement, côté
 formulaire standard.
 
-### 13.5 [Corroboration renforcée de l'écart §11.2] Les pages de présentation des races confirment les technologies codées en Java, pas celles du tableau des règles
+### 13.5 [Corroboration — écart §11.2 depuis réfuté par mise à jour des règles] Les pages de présentation des races confirment les technologies codées en Java
 
 Les pages `php/races/{fremen,atalante,zwaia,yoksor,fergok}.php`
 décrivent, pour chaque race, une "Station de [ressource] de type II"
 constructible sur les systèmes de départ. Ces descriptions correspondent
 à la **deuxième** technologie de chaque entrée de
-`Const.RACE_TECHNOLOGIES` (§11.2), pas au tableau des règles §0.2 :
+`Const.RACE_TECHNOLOGIES` :
 
-| Race | Règles §0.2 | Java (2ᵉ techno) | PHP (`php/races/*.php`) |
-|---|---|---|---|
-| Fremens | Station produits alimentaires I | `metauxII` | "Stations d'enrichissement des métaux de type II" |
-| Atalantes | Station métaux précieux I | `raffineII` | "Stations énergétiques de type II" |
-| Zwaias | Station composants électroniques | `armeII` | "Stations d'armements et explosifs de type II" |
-| Yoksors | Radar de type III | `infoII` | "Stations de logiciels de type II" |
-| Fergoks | Station armement + maîtrise militaire II | `technoII` | "Stations de composants électroniques de type II" |
+| Race | Java (2ᵉ techno) | PHP (`php/races/*.php`) |
+|---|---|---|
+| Fremens | `metauxII` | "Stations d'enrichissement des métaux de type II" |
+| Atalantes | `raffineII` | "Stations énergétiques de type II" |
+| Zwaias | `armeII` | "Stations d'armements et explosifs de type II" |
+| Yoksors | `infoII` | "Stations de logiciels de type II" |
+| Fergoks | `technoII` | "Stations de composants électroniques de type II" |
 
 Java et PHP se corroborent mutuellement (aux noms de code près) sur les
-cinq races, contre le tableau des règles §0.2 qui décrit un jeu
-différent. Ceci confirme que §11.2 est bien un décalage de la
-documentation par rapport à un rééquilibrage réel du jeu, plutôt qu'un
-bug de code isolé — le code (Java et PHP) est cohérent avec lui-même,
-seule la documentation des règles n'a pas suivi.
+cinq races. Au moment de cette corroboration, ceci contredisait
+l'ancienne copie du tableau des règles §0.2 présente sur cette branche
+— confirmant que le décalage relevé en §11.2 venait de la
+documentation, pas du code. **Cette hypothèse s'est depuis révélée
+juste** : `rules/Mise à jour/0.2` a été mise à jour depuis
+`upstream/main` (le dépôt d'origine) et son tableau correspond
+maintenant exactement à Java et PHP — voir la correction complète en
+§11.2.
 
-En revanche, les noms des plans de vaisseau de départ (colonne "Plan(s)
-de vaisseau(x)" du tableau §0.2) sont bien confirmés exacts : la page
-`php/races/fremen.php` mentionne le vaisseau "Sidjin" et
-`php/races/atalante.php` le vaisseau "Gardien", conformes au tableau
-des règles.
+Les noms des plans de vaisseau de départ étaient déjà confirmés exacts
+avant même cette mise à jour : la page `php/races/fremen.php` mentionne
+le vaisseau "Sidjin" et `php/races/atalante.php` le vaisseau "Gardien",
+conformes au tableau des règles (ancien et nouveau).
 
 ### 13.6 [Comportement non documenté, portée précisée] Système de "prêt pour le tour suivant" — probablement purement informatif
 
@@ -2104,7 +2195,6 @@ que centralisé dans une table de données.
 | 2.3 | Aucun plafond de 999 unités/transfert | Contrôle absent, pas une valeur à ajuster |
 | 3.1 | Colonisation même race → extermination | Comparaison de race manquante dans la condition |
 | 3.2 | Colonisateur choisi = premier de la liste, pas aléatoire | Boucle déterministe au lieu d'un tirage |
-| 3.3 | Pénalité sans capitale -16% au lieu de -10% | Réutilisation erronée du dernier indice du tableau de distance |
 | 3.4 | Malus Alcools désactivé | Code commenté |
 | 3.5 | Politique Loisir -20% au lieu de -5% | Littéral `retour - retour/5` écrit en dur dans `Systeme.java` |
 | 3.6 | Seuil d'éradication `≤30` au lieu de `<30` | Opérateur de comparaison |
@@ -2113,6 +2203,8 @@ que centralisé dans une table de données.
 | 5.1 | Succession de dirigeant par "puissance" au lieu du nb. de planètes | Mauvaise méthode de tri utilisée (`getPuissance` vs nb. planètes) |
 | 5.5 | Gain de réputation automatique 0-9 par tour au lieu de 50-100 | Littéral `Univers.getInt(10)` dans `DeroulementDuTour.java`, sans le forfait fixe de 50 |
 | 5.6 | Malus Esclavagiste `-2×planètes` au lieu de `-(planètes)²` | Littéral `*2` réutilisé par erreur dans `DeroulementDuTour.java` |
+| 5.7 | Opinion inter-espèces : don de flotte à `5×` la puissance au lieu de `2×` | Littéral `5 *` câblé dans `Commandant.transfertFlotte` |
+| 5.8 | Opinion inter-espèces : don de centaures `/100` au lieu de `/200` | Littéral `don / 100` câblé dans `Commandant.transfertCentaures` |
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
 | 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
 | 6.4 | Milice planétaire : formule de tir sans rapport avec "10 miliciens = 1 laser" | Formule et mécanisme entiers dans `Combat.tirMilicesPlanetaires`, pas une valeur de table |
@@ -2141,7 +2233,6 @@ les consomme.
 | 5.3 | Réputation "coloniser" +20 au lieu de +50 | `Const.REPUTATION_COLONISER_PLANETE` |
 | 6.1 (forfait) | +20 centaures ajoutés à toute flotte, non documenté | `Const.BASE_ENTRETIEN_FLOTTE` (mais son usage inconditionnel reste une décision de code) |
 | 9.2 | Table du nombre de cibles maximum sans rapport avec "cibles = taille" | `Const.NB_CIBLES` (actuellement sans effet observable, masquée par le bug §9.1) |
-| 11.2 | Technologies de départ par race sans rapport avec le tableau des règles | `Const.RACE_TECHNOLOGIES` |
 | 12.1 | 16 secteurs de 17 systèmes au lieu de 4 secteurs de 40 | `Const.NB_SECTEURS_X`, `Const.NB_SYSTEMES_PAR_SECTEUR` |
 | 12.2 | Tables de tolérance climatique par race sans rapport avec le tableau des règles | `Const.HABITAT_RADIATION`, `Const.HABITAT_TEMPERATURE` |
 | 12.3 | 10 types d'étoiles au lieu de 6 documentés | `Messages.ETOILES` |
@@ -2155,18 +2246,19 @@ point.*
 
 ### 14.3 Bilan
 
-35 écarts confirmés au total (§14.1 : 29 lignes relevant au moins en
-partie de la logique du code ; §14.2 : 11 lignes comportant une
+35 écarts confirmés au total (§14.1 : 30 lignes relevant au moins en
+partie de la logique du code ; §14.2 : 10 lignes comportant une
 composante purement paramétrique — une valeur ou une table dans
 `Const.java`/`Messages.java` suffirait à les corriger ; l'écart 6.1
 apparaît dans les deux tableaux, ses diviseurs étant câblés dans la
 logique tandis que son forfait fixe non documenté vient d'une
 constante). Les écarts purement paramétriques restent concentrés sur
-cinq zones de données : les tables de compétences des lieutenants
+quatre zones de données : les tables de compétences des lieutenants
 (§4), les constantes de réputation (§5), la table du nombre de cibles
-maximum au combat spatial (§9.2, actuellement inerte), les technologies
-de départ par race (§11.2), et les tables de génération de
-galaxie/tolérance climatique (§12.1-12.3).
+maximum au combat spatial (§9.2, actuellement inerte), et les tables de
+génération de galaxie/tolérance climatique (§12.1-12.3) — les
+technologies de départ par race (ex-§11.2) ne comptent plus parmi eux,
+cet écart ayant été réfuté (§11.2).
 
 Six écarts se distinguent par leur sévérité et méritent une priorité de
 correction : la boucle de tirs multiples désactivée en combat spatial
@@ -2201,6 +2293,23 @@ réfutées ; les rapports de bug correspondants
 `doc/fix/limite-missions-speciales-par-tour.md`,
 `doc/fix/limite-don-technologie-par-tour.md`, sur leurs branches
 respectives) ont été mis à jour dans le même sens.
+
+**Deux écarts supplémentaires (la pénalité de stabilité sans capitale
+§3.3, les technologies de départ par race §11.2) ont eux aussi été
+réfutés**, pour une raison différente : la copie de `rules/Mise à jour/`
+présente sur cette branche (héritée de `develop`) s'est révélée en
+retard sur `upstream/main`, le dépôt d'origine
+(`ydomenjoud/sheril-old-java`). Une fois les fichiers concernés
+synchronisés, le code s'est avéré conforme aux deux (-16% de stabilité
+et technologies de départ par race, déjà corroborées par les pages PHP
+en §13.5). Cette même mise à jour a révélé une section de règles
+entièrement nouvelle (opinion entre espèces, §2.4.4), auditée dans la
+foulée : elle a mis au jour deux écarts inédits (§5.7, §5.8, tous deux
+des multiplicateurs/diviseurs erronés dans le calcul du bonus
+d'opinion). Ce round de corrections illustre l'intérêt de vérifier
+périodiquement que les règles utilisées comme référence sont bien à
+jour par rapport au dépôt d'origine, pas seulement par rapport à la
+branche de travail locale.
 
 ---
 
