@@ -665,7 +665,7 @@ qui, seuls, auraient été parfaitement valides.
 
 **Preuve sur données réelles de partie** (tours 10 et 11, voir
 `data/tour10/dump.sql` et `data/tour11/rapports/1tour11/rapport.xml`
-sur ce dépôt) : après que le contournement décrit en §13.2 (POST direct
+sur ce dépôt) : après que le contournement décrit en §12.2 (POST direct
 depuis la console, hors formulaire masqué) a bien inséré 4 lignes dans
 `services_speciaux` et 2 lignes dans `transferer_technologie` pour le
 commandant 1 au tour 10 —
@@ -846,7 +846,7 @@ sécurité redondante toute ligne au-delà de la 3ᵉ (`j > 2`).
 
 **Preuve sur données réelles de partie (tour 10 → rapport du tour 11,
 détaillée en §4.6)** : 4 lignes `services_speciaux` insérées pour le
-commandant 1 via le contournement du formulaire décrit en §13.2 ; le
+commandant 1 via le contournement du formulaire décrit en §12.2 ; le
 rapport individuel du tour suivant ne contient **aucun** événement de
 mission spéciale (succès ou échec) — cohérent avec l'écartement complet
 du lot par `getOrdres()`, pas avec un traitement des 3 premières
@@ -854,7 +854,7 @@ lignes ni des 4.
 
 L'écart réel n'est donc pas l'absence de limite, mais — comme pour
 l'enrôlement de lieutenant — le fait que dépasser la limite via le
-contournement du formulaire PHP (toujours réel, cf. §13.2) ne profite
+contournement du formulaire PHP (toujours réel, cf. §12.2) ne profite
 pas au joueur : cela annule l'intégralité de ses missions du tour,
 y compris celles qui, seules, auraient été valides, au lieu de
 simplement plafonner à 3.
@@ -903,7 +903,7 @@ politique Esclavagiste.
 ### 5.7 [Nouveau domaine, écart confirmé] Opinion entre espèces : transfert de flotte à 5× la puissance au lieu de 2×
 
 La mise à jour de `rules/Mise à jour/2. Population.md` depuis
-`upstream/main` (le dépôt d'origine, cf. §11.2/§3.3 pour le contexte de
+`upstream/main` (le dépôt d'origine, cf. §10.2/§3.3 pour le contexte de
 cette mise à jour) a ajouté une section entièrement nouvelle, §2.4.4
 "L'opinion entre les espèces", jusque-là absente de la copie des règles
 présente sur cette branche — domaine non audité jusqu'ici. Elle détaille
@@ -1362,7 +1362,7 @@ leur nombre dépasse `Const.NOMBRE_LIMITE_DON_TECHNOLOGIE = 1`.
 **Preuve sur données réelles de partie (tour 10 → rapport du tour 11,
 détaillée en §4.6)** : 2 lignes `transferer_technologie` insérées pour
 le commandant 1 (`robotI` et `transfoI` vers le commandant 2) via le
-contournement du formulaire décrit en §13.2 ; le rapport individuel du
+contournement du formulaire décrit en §12.2 ; le rapport individuel du
 tour suivant ne contient aucun événement de don de technologie, et les
 deux codes technologiques n'apparaissent dans les données sérialisées
 du tour suivant qu'à raison d'une seule occurrence chacun — celle déjà
@@ -1374,7 +1374,7 @@ comme dans l'autre : ni le premier don (légitime), ni le second
 
 L'écart réel n'est donc pas l'absence de limite, mais — comme pour les
 deux cas jumeaux — le fait que dépasser la limite via le contournement
-du formulaire PHP (toujours réel, cf. §13.2) fait perdre au joueur son
+du formulaire PHP (toujours réel, cf. §12.2) fait perdre au joueur son
 don légitime en plus de l'excédentaire, au lieu de simplement le
 plafonner à un.
 
@@ -1574,7 +1574,7 @@ défenseur où se trouvent les autres vaisseaux de sa propre flotte.
 
 ---
 
-## 11. Introduction, situation de départ et avantages de race
+## 10. Introduction, situation de départ et avantages de race
 
 Règles auditées : `rules/Mise à jour/0.1 Introduction et situation de
 départ.md` et `rules/Mise à jour/0.2 Avantage de race du commandant.md`.
@@ -1583,7 +1583,7 @@ Code audité : `Joueur.creerCommandant` (`Joueur.java:328-473`),
 `Flotte.choixFlotteDeDepart` (`Flotte.java:257-306`),
 `Const.RACE_TECHNOLOGIES`.
 
-### 11.1 [Écart confirmé] Budget de départ : 20000 centaures au lieu de 21000
+### 10.1 [Écart confirmé] Budget de départ : 20000 centaures au lieu de 21000
 
 Les règles (§0.1) : *"21000 centaures (monnaie du jeu)"*.
 
@@ -1602,7 +1602,7 @@ documentée par les règles mais est cohérente avec la nécessité de
 rattraper le retard de revenus accumulés par les commandants déjà en
 jeu — seule la valeur de référence au tour 0 diverge de la règle.
 
-### 11.2 [Réfuté par mise à jour des règles depuis le dépôt d'origine] Technologies de départ par race : la documentation locale était simplement obsolète
+### 10.2 [Réfuté par mise à jour des règles depuis le dépôt d'origine] Technologies de départ par race : la documentation locale était simplement obsolète
 
 **Écart initialement confirmé par comparaison avec le tableau de
 `rules/Mise à jour/0.2 Avantage de race du commandant.md` alors présent
@@ -1644,13 +1644,13 @@ pas reçu cette mise à jour) était en retard sur `upstream/main` — pas
 un écart entre le code et les règles réellement en vigueur.
 
 *Le plan de vaisseau restait par ailleurs déjà confirmé exact dans la
-version précédente de ce document (Sidjin, Gardien — voir §13.5) ; le
+version précédente de ce document (Sidjin, Gardien — voir §12.5) ; le
 nouveau tableau donne également les noms des trois autres plans
 (Bombardier Zwaia, Spiteur, Feinteur), non vérifiés individuellement
 ici faute de descriptions PHP correspondantes disponibles au moment de
 l'audit initial des pages de race.*
 
-### 11.3 [Écart confirmé] Aucun colonisateur dans la flotte de départ
+### 10.3 [Écart confirmé] Aucun colonisateur dans la flotte de départ
 
 Les règles (§0.1) : *"La flotte contient des vaisseaux armés, des
 colonisateurs et des éclaireurs."* Et (§2.1.2, déjà citée en §3 de ce
@@ -1692,7 +1692,7 @@ remplie par le flux d'inscription actuellement actif — confirmant que
 l'écart ci-dessus s'applique sans exception dans le jeu tel qu'il
 fonctionne aujourd'hui.
 
-### 11.4 [Écart confirmé] Le coût de terraformation augmente bien avec le niveau, contrairement à ce que la note des règles observe
+### 10.4 [Écart confirmé] Le coût de terraformation augmente bien avec le niveau, contrairement à ce que la note des règles observe
 
 Les règles (§2.1.1) contiennent une note empirique : *"Terraformer une
 planète coûte 52 à 54 centaures... **Mais ça ne semble pas être le cas
@@ -1716,7 +1716,7 @@ paliers ; l'observation selon laquelle le prix n'augmenterait pas est
 donc incorrecte au-delà du niveau 1, probablement une conclusion tirée
 d'un nombre limité d'essais en jeu.
 
-### 11.5 Points conformes aux règles (vérifiés, pour mémoire)
+### 10.5 Points conformes aux règles (vérifiés, pour mémoire)
 
 - **2 systèmes, 30 planètes au total, 2 lieutenants (1 héros + 1
   gouverneur)** : confirmés,
@@ -1727,12 +1727,12 @@ d'un nombre limité d'essais en jeu.
   (±2 par niveau sur radiation/température, pas sur la gravité) :
   confirmé structurellement,
   `radiation < (-2*terraformation + HABITAT_RADIATION[race][0])`
-  (`Planete.java:842-843`) — voir cependant §12.2 sur les valeurs de
+  (`Planete.java:842-843`) — voir cependant §11.2 sur les valeurs de
   base de ces tables de tolérance.
 
 ---
 
-## 12. La galaxie, les systèmes et les planètes
+## 11. La galaxie, les systèmes et les planètes
 
 Règles auditées : `rules/Mise à jour/1. La galaxie, les systèmes et les
 planètes.md` (première moitié du fichier ; sa seconde moitié duplique
@@ -1742,7 +1742,7 @@ Code audité : `Const.java` (constantes de génération de galaxie),
 `Systeme.creerAuHasard` (`Systeme.java:155-190`), `Messages.ETOILES`,
 `Planete.calculeMaxPopDeBase` (`Planete.java:840-...`).
 
-### 12.1 [Écart confirmé] Structure de la galaxie : 16 secteurs de 17 systèmes, pas 4 secteurs de 40 systèmes
+### 11.1 [Écart confirmé] Structure de la galaxie : 16 secteurs de 17 systèmes, pas 4 secteurs de 40 systèmes
 
 Les règles (§1.1) : *"La galaxie est découpée en 4 secteurs. Il y a 40
 systèmes par secteur."* (soit 160 systèmes au total). La grille 40×40
@@ -1765,7 +1765,7 @@ pas 4. Combiné aux 17 systèmes par secteur (et non 40), la galaxie
 compte au total 272 systèmes, très différent des 160 (4×40) qu'impliquent
 les règles. Seule la borne de coordonnées (40×40) correspond au texte.
 
-### 12.2 [Écart confirmé] Tables de tolérance climatique par race : valeurs sans rapport avec le tableau des règles
+### 11.2 [Écart confirmé] Tables de tolérance climatique par race : valeurs sans rapport avec le tableau des règles
 
 Les règles (§2.1, table déjà citée en §3 de ce document) donnent des
 bornes précises de radiation et de température par race. Les tables de
@@ -1800,7 +1800,7 @@ sur une hypothèse de convention d'unité raisonnable mais non vérifiée
 par un calcul réel sur une planète existante ; une confirmation par
 test (prévue plus tard) la rendrait définitive.
 
-### 12.3 [Écart confirmé, mineur] 10 types d'étoiles dans le code contre 6 documentés
+### 11.3 [Écart confirmé, mineur] 10 types d'étoiles dans le code contre 6 documentés
 
 Les règles (§1.2.1) : *"On distingue 6 étoiles différentes : Etoile
 bleue, Nova, Etoile blanche, Naine orange, Naine bleue, Naine rouge."*
@@ -1816,7 +1816,7 @@ Les 6 types documentés sont bien présents, mais précédés de 4 types
 supplémentaires non documentés ("Heron", "Kyo", "flamboyant",
 "arcturus"), portant le total à 10.
 
-### 12.4 Points conformes aux règles (vérifiés, pour mémoire)
+### 11.4 Points conformes aux règles (vérifiés, pour mémoire)
 
 - **Grille 40×40 à bords contigus, coordonnées de 1 à 40** : confirmé,
   `Const.BORNE_MAX = 40` et usage modulo dans les calculs de position
@@ -1842,7 +1842,7 @@ supplémentaires non documentés ("Heron", "Kyo", "flamboyant",
 
 ---
 
-## 13. Couche PHP (interface web)
+## 12. Couche PHP (interface web)
 
 Jusqu'ici, l'audit a porté presque exclusivement sur
 `src/main/java/zIgzAg/jeu/oceane` — la couche PHP (`php/`, une
@@ -1856,7 +1856,7 @@ règles — les constats ci-dessous portent donc sur des fonctionnalités
 web spécifiques plutôt que sur des recalculs de formules déjà audités
 côté Java.
 
-### 13.1 [Comportement non documenté] "Marché Galactique" : une bourse d'offres de vente publique, mécanisme distinct de celui décrit par les règles
+### 12.1 [Comportement non documenté] "Marché Galactique" : une bourse d'offres de vente publique, mécanisme distinct de celui décrit par les règles
 
 Les règles du commerce (§6.1.1 de `produits_commerciaux_et_dons.md`,
 déjà auditées en §8 de ce document) décrivent un commerce **fondé sur
@@ -1874,7 +1874,7 @@ commenté (lignes 83-103, `<!--...-->`) : seul le dépôt d'offres de
 vente est aujourd'hui fonctionnel, l'achat effectif via cette bourse
 ne l'est pas.
 
-### 13.2 [Correction] Plusieurs plafonds absents côté Java sont en réalité appliqués côté formulaire PHP — via un même mécanisme de masquage, pas de rejet serveur
+### 12.2 [Correction] Plusieurs plafonds absents côté Java sont en réalité appliqués côté formulaire PHP — via un même mécanisme de masquage, pas de rejet serveur
 
 Un examen plus poussé (suite à la question de savoir si des écarts
 Java sont "corrigés" côté PHP) a mis au jour un mécanisme récurrent
@@ -1960,12 +1960,12 @@ réel), mais elle n'a aucun effet en jeu — pire, elle fait perdre au
 joueur l'intégralité de ses ordres légitimes du même type ce tour-ci,
 puisque `getOrdres()` ne garde pas les N premiers, il écarte tout dès
 que N+1 est atteint. Ceci concerne les cinq types d'ordres listés
-ci-dessus (voir aussi §13.7, également corrigée) ; ça ne concerne pas
+ci-dessus (voir aussi §12.7, également corrigée) ; ça ne concerne pas
 la limite de 999 unités par transfert inter-système (§2.3), pour
 laquelle aucun mécanisme équivalent — dans `getOrdres()` ou ailleurs —
 n'a été trouvé : ce plafond-là reste un écart réel, non mitigé.
 
-### 13.3 [Nuance sur l'écart §7.1] Le menu déroulant des missions spéciales ne propose que les systèmes détectés
+### 12.3 [Nuance sur l'écart §7.1] Le menu déroulant des missions spéciales ne propose que les systèmes détectés
 
 L'écart §7.1 (aucune vérification que le système ciblé par une mission
 spéciale est possédé ou détecté) est lui aussi tempéré côté formulaire :
@@ -1984,7 +1984,7 @@ ne restreint que le formulaire, pas l'insertion générique
 (`insert.txt`) ni la validation Java, donc pas de garantie en cas de
 requête directe.
 
-### 13.4 [Nuance sur l'écart §2.3] Le champ de transfert inter-système a bien une contrainte de longueur — mais elle ne correspond pas à la limite de 999 annoncée
+### 12.4 [Nuance sur l'écart §2.3] Le champ de transfert inter-système a bien une contrainte de longueur — mais elle ne correspond pas à la limite de 999 annoncée
 
 ```php
 // php/ordres/fr/choix/charger_cargo.txt:5
@@ -2001,7 +2001,7 @@ collage de texte dans certains navigateurs, ni a fortiori une requête
 directe). L'écart §2.3 n'est donc pas mitigé, même partiellement, côté
 formulaire standard.
 
-### 13.5 [Corroboration — écart §11.2 depuis réfuté par mise à jour des règles] Les pages de présentation des races confirment les technologies codées en Java
+### 12.5 [Corroboration — écart §10.2 depuis réfuté par mise à jour des règles] Les pages de présentation des races confirment les technologies codées en Java
 
 Les pages `php/races/{fremen,atalante,zwaia,yoksor,fergok}.php`
 décrivent, pour chaque race, une "Station de [ressource] de type II"
@@ -2020,19 +2020,19 @@ constructible sur les systèmes de départ. Ces descriptions correspondent
 Java et PHP se corroborent mutuellement (aux noms de code près) sur les
 cinq races. Au moment de cette corroboration, ceci contredisait
 l'ancienne copie du tableau des règles §0.2 présente sur cette branche
-— confirmant que le décalage relevé en §11.2 venait de la
+— confirmant que le décalage relevé en §10.2 venait de la
 documentation, pas du code. **Cette hypothèse s'est depuis révélée
 juste** : `rules/Mise à jour/0.2` a été mise à jour depuis
 `upstream/main` (le dépôt d'origine) et son tableau correspond
 maintenant exactement à Java et PHP — voir la correction complète en
-§11.2.
+§10.2.
 
 Les noms des plans de vaisseau de départ étaient déjà confirmés exacts
 avant même cette mise à jour : la page `php/races/fremen.php` mentionne
 le vaisseau "Sidjin" et `php/races/atalante.php` le vaisseau "Gardien",
 conformes au tableau des règles (ancien et nouveau).
 
-### 13.6 [Comportement non documenté, portée précisée] Système de "prêt pour le tour suivant" — probablement purement informatif
+### 12.6 [Comportement non documenté, portée précisée] Système de "prêt pour le tour suivant" — probablement purement informatif
 
 Les règles (§0.1) : *"une fois par semaine, le jeu passe au tour
 suivant"* — un rythme fixe, sans mention de résolution anticipée.
@@ -2058,7 +2058,7 @@ purement informatif ("combien de joueurs ont fini de jouer") sans
 effet sur le calendrier des tours — et donc sans contradiction avec la
 règle du rythme hebdomadaire fixe.
 
-### 13.7 [Corrigé] Deux autres ordres limités à une soumission par tour — confirmés implémentés côté Java, pas seulement côté PHP
+### 12.7 [Corrigé] Deux autres ordres limités à une soumission par tour — confirmés implémentés côté Java, pas seulement côté PHP
 
 **Ce paragraphe concluait initialement que ces limites n'avaient "pas
 de contrepartie vérifiée côté Java, non recherchée" ; la lecture
@@ -2067,7 +2067,7 @@ complémentaire de `ReceptionOrdres.getOrdres()` qui a corrigé §4.6,
 
 Passage systématique des fichiers `php/ordres/fr/choix/*.txt` à la
 recherche du même motif de comptage (`$nb_lignes`) que celui identifié
-en §13.2 et §4.6. Deux occurrences supplémentaires :
+en §12.2 et §4.6. Deux occurrences supplémentaires :
 
 - **`creer_plan.txt`** (conception d'un nouveau plan de vaisseau) :
   `$max = 1`, formulaire masqué au-delà.
@@ -2105,7 +2105,7 @@ tour) ; pas compté comme écart ou comportement non documenté.
 type, cohérent avec *"une flotte peut être divisée autant de fois que
 vous voulez au cours d'un même tour"* (§4.2) — vérifié conforme.
 
-### 13.8 Vérification systématique : le mécanisme de rejet en bloc ne s'applique qu'à 5 types d'ordres, aucun autre écart de l'audit n'est concerné
+### 12.8 Vérification systématique : le mécanisme de rejet en bloc ne s'applique qu'à 5 types d'ordres, aucun autre écart de l'audit n'est concerné
 
 Suite à la réfutation des écarts §4.6/§5.4/§8.2, vérification demandée
 de la portée réelle du mécanisme découvert
@@ -2118,7 +2118,7 @@ exactement cinq existent —
 `ENROLER_LIEUTENANT`, `SERVICES_SPECIAUX`, `DON_TECHNOLOGIE`,
 `CREATION_PLAN`, `CREATION_STRATEGIE` (`Const.java:754-758`) — les
 mêmes cinq déjà couvertes par la correction du §4.6 (les trois premières)
-et par §13.7 (les deux dernières). Aucune sixième occurrence.
+et par §12.7 (les deux dernières). Aucune sixième occurrence.
 
 **Recherche exhaustive des vérifications par index dans
 `resoudreMethode()`** (le garde-fou redondant `j > 0`/`j > 2`) :
@@ -2168,7 +2168,7 @@ dans les sections précédentes n'est concerné.
 
 ---
 
-## 14. Synthèse : écarts de logique vs écarts de paramétrage
+## 13. Synthèse : écarts de logique vs écarts de paramétrage
 
 Pour prioriser les corrections, les écarts confirmés ci-dessus sont
 reclassés selon leur emplacement : dans un fichier de données/constantes
@@ -2177,7 +2177,7 @@ la logique elle-même (méthode d'un fichier comme `Combat.java`,
 `Commandant.java`, `Flotte.java`...) où c'est un comportement entier
 qu'il faut recoder.
 
-### 14.1 Écarts de logique/algorithme
+### 13.1 Écarts de logique/algorithme
 
 Corriger ces écarts demande de modifier du code exécutable (une
 condition, une formule, un appel manquant), pas seulement une valeur
@@ -2208,17 +2208,17 @@ que centralisé dans une table de données.
 | 6.1 (diviseurs) | Entretien flotte `/20`, garnison `/3`, `carburant /2` | Diviseurs câblés dans `Flotte.getEntretien` |
 | 6.2 | Directive de fusion non héritée automatiquement | Comportement de fusion, paramètre fourni par le joueur |
 | 6.4 | Milice planétaire : formule de tir sans rapport avec "10 miliciens = 1 laser" | Formule et mécanisme entiers dans `Combat.tirMilicesPlanetaires`, pas une valeur de table |
-| 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent, mitigé par le menu déroulant PHP (§13.3) |
+| 7.1 | Aucune vérification que le système ciblé par une mission spéciale est possédé/détecté | Contrôle absent, mitigé par le menu déroulant PHP (§12.3) |
 | 7.2 | Vol de technologie vole une techno déjà connue et l'octroie intégralement | Méthode entière (`trouverTechnoAVoler`) sur la mauvaise source de données |
 | 8.1 | Convergence du prix des marchandises inopérante sauf taxation 0% | Division entière `(100-taux)/100` dans `Possession.evolutionPosteCo` |
 | 9.1 | Boucle de tirs multiples désactivée (`i <= 0`) | Borne de boucle câblée en dur dans `Combat.java`, valeur réelle commentée |
 | 9.3 | Fiabilité de l'arme jamais appliquée (combat spatial), désactivée ailleurs | Aucun appel dans `Vaisseau.tir` ; `if (true /* ... */)` dans `ConstructionPlanetaire.tir` |
 | 9.4 | Formule d'inversion de position Y (stratégie, défenseur) incorrecte | Terme `Const.COMBAT_Y_MAX` manquant dans `Combat.java` |
-| 11.1 | Budget de départ 20000 au lieu de 21000 centaures | Littéraux `20000F`/`20000 + tour*1000` dans `Joueur.creerCommandant` |
-| 11.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` ; mécanisme de personnalisation alimenté par une table jamais remplie |
-| 11.4 | Le coût de terraformation augmente bien avec le niveau | Formule `50 + (niveau+1)*2` dans `Planete.coutTerraformation` |
+| 10.1 | Budget de départ 20000 au lieu de 21000 centaures | Littéraux `20000F`/`20000 + tour*1000` dans `Joueur.creerCommandant` |
+| 10.3 | Aucun colonisateur dans la flotte de départ | Quotas de flotte de départ, colonisateur absent de la liste dans `Flotte.choixFlotteDeDepart` ; mécanisme de personnalisation alimenté par une table jamais remplie |
+| 10.4 | Le coût de terraformation augmente bien avec le niveau | Formule `50 + (niveau+1)*2` dans `Planete.coutTerraformation` |
 
-### 14.2 Écarts de paramétrage
+### 13.2 Écarts de paramétrage
 
 Corriger ces écarts se limite en principe à changer une valeur ou
 compléter une table dans `Const.java` — sans toucher à la logique qui
@@ -2233,9 +2233,9 @@ les consomme.
 | 5.3 | Réputation "coloniser" +20 au lieu de +50 | `Const.REPUTATION_COLONISER_PLANETE` |
 | 6.1 (forfait) | +20 centaures ajoutés à toute flotte, non documenté | `Const.BASE_ENTRETIEN_FLOTTE` (mais son usage inconditionnel reste une décision de code) |
 | 9.2 | Table du nombre de cibles maximum sans rapport avec "cibles = taille" | `Const.NB_CIBLES` (actuellement sans effet observable, masquée par le bug §9.1) |
-| 12.1 | 16 secteurs de 17 systèmes au lieu de 4 secteurs de 40 | `Const.NB_SECTEURS_X`, `Const.NB_SYSTEMES_PAR_SECTEUR` |
-| 12.2 | Tables de tolérance climatique par race sans rapport avec le tableau des règles | `Const.HABITAT_RADIATION`, `Const.HABITAT_TEMPERATURE` |
-| 12.3 | 10 types d'étoiles au lieu de 6 documentés | `Messages.ETOILES` |
+| 11.1 | 16 secteurs de 17 systèmes au lieu de 4 secteurs de 40 | `Const.NB_SECTEURS_X`, `Const.NB_SYSTEMES_PAR_SECTEUR` |
+| 11.2 | Tables de tolérance climatique par race sans rapport avec le tableau des règles | `Const.HABITAT_RADIATION`, `Const.HABITAT_TEMPERATURE` |
+| 11.3 | 10 types d'étoiles au lieu de 6 documentés | `Messages.ETOILES` |
 
 *2.4 (coût de conception de plan 5x/10x) n'entre dans aucune des deux
 catégories : `Const.MODIFICATEUR_MULTIPLICATEUR_CREATION` est bien un
@@ -2244,10 +2244,10 @@ avec la version à jour des règles ; seul l'ancien fichier
 `rules/constructions.md`, non retouché depuis, est obsolète sur ce
 point.*
 
-### 14.3 Bilan
+### 13.3 Bilan
 
-35 écarts confirmés au total (§14.1 : 30 lignes relevant au moins en
-partie de la logique du code ; §14.2 : 10 lignes comportant une
+35 écarts confirmés au total (§13.1 : 30 lignes relevant au moins en
+partie de la logique du code ; §13.2 : 10 lignes comportant une
 composante purement paramétrique — une valeur ou une table dans
 `Const.java`/`Messages.java` suffirait à les corriger ; l'écart 6.1
 apparaît dans les deux tableaux, ses diviseurs étant câblés dans la
@@ -2256,9 +2256,9 @@ constante). Les écarts purement paramétriques restent concentrés sur
 quatre zones de données : les tables de compétences des lieutenants
 (§4), les constantes de réputation (§5), la table du nombre de cibles
 maximum au combat spatial (§9.2, actuellement inerte), et les tables de
-génération de galaxie/tolérance climatique (§12.1-12.3) — les
-technologies de départ par race (ex-§11.2) ne comptent plus parmi eux,
-cet écart ayant été réfuté (§11.2).
+génération de galaxie/tolérance climatique (§11.1-11.3) — les
+technologies de départ par race (ex-§10.2) ne comptent plus parmi eux,
+cet écart ayant été réfuté (§10.2).
 
 Six écarts se distinguent par leur sévérité et méritent une priorité de
 correction : la boucle de tirs multiples désactivée en combat spatial
@@ -2283,7 +2283,7 @@ applique bien les plafonds "par tour" annoncés par les règles, en
 commandant qui les dépasse. Cette réfutation a été confirmée sur des
 données de partie réelles (`data/tour10/dump.sql`,
 `data/tour11/rapports/1tour11/rapport.xml`) après que l'utilisateur a
-exécuté le contournement du formulaire PHP décrit en §13.2 sur ces deux
+exécuté le contournement du formulaire PHP décrit en §12.2 sur ces deux
 types d'ordres et constaté, à juste titre, que les ordres excédentaires
 n'avaient produit aucun effet au tour suivant. Les trois sections
 concernées ont été conservées et corrigées plutôt que supprimées,
@@ -2295,14 +2295,14 @@ réfutées ; les rapports de bug correspondants
 respectives) ont été mis à jour dans le même sens.
 
 **Deux écarts supplémentaires (la pénalité de stabilité sans capitale
-§3.3, les technologies de départ par race §11.2) ont eux aussi été
+§3.3, les technologies de départ par race §10.2) ont eux aussi été
 réfutés**, pour une raison différente : la copie de `rules/Mise à jour/`
 présente sur cette branche (héritée de `develop`) s'est révélée en
 retard sur `upstream/main`, le dépôt d'origine
 (`ydomenjoud/sheril-old-java`). Une fois les fichiers concernés
 synchronisés, le code s'est avéré conforme aux deux (-16% de stabilité
 et technologies de départ par race, déjà corroborées par les pages PHP
-en §13.5). Cette même mise à jour a révélé une section de règles
+en §12.5). Cette même mise à jour a révélé une section de règles
 entièrement nouvelle (opinion entre espèces, §2.4.4), auditée dans la
 foulée : elle a mis au jour deux écarts inédits (§5.7, §5.8, tous deux
 des multiplicateurs/diviseurs erronés dans le calcul du bonus
@@ -2332,25 +2332,25 @@ tableau de réputation qui a permis de corroborer et d'affiner l'écart
 est un texte purement narratif sur des personnages non-joueurs, sans
 mécanique vérifiable.*
 
-*Une passe dédiée à la couche PHP (`php/`, §13) a également été menée,
+*Une passe dédiée à la couche PHP (`php/`, §12) a également été menée,
 en complément de l'audit Java qui reste le corps principal de ce
 document : le PHP de ce dépôt est essentiellement une interface web
 (formulaires d'ordres, rapports, forum, pages de présentation des
 races) au-dessus du moteur Java, pas une réimplémentation séparée des
 règles. Elle a révélé une fonctionnalité de commerce non documentée
-(§13.1), montré que les plafonds absents côté Java pour les dons de
+(§12.1), montré que les plafonds absents côté Java pour les dons de
 technologie (§8.2) et les missions spéciales (§5.4) sont bien
 reproduits par les formulaires PHP standard — mais seulement en
 masquant le champ de saisie une fois le quota atteint, sans aucun
 contrôle serveur équivalent dans le script d'insertion générique
-(§13.2) — nuancé de la même façon l'écart sur la vérification de
-détection des systèmes ciblés en mission spéciale (§13.3) et la limite
+(§12.2) — nuancé de la même façon l'écart sur la vérification de
+détection des systèmes ciblés en mission spéciale (§12.3) et la limite
 de 999 unités par transfert inter-système, cette dernière non
-reproduite correctement même côté formulaire (§13.4), renforcé la
-confiance dans l'écart §11.2 grâce à une corroboration indépendante
-Java/PHP (§13.5), et signalé un mécanisme de "prêt pour le tour
+reproduite correctement même côté formulaire (§12.4), renforcé la
+confiance dans l'écart §10.2 grâce à une corroboration indépendante
+Java/PHP (§12.5), et signalé un mécanisme de "prêt pour le tour
 suivant" non documenté dont l'effet réel sur le calendrier des tours
-n'a pas pu être tranché (§13.6). Cette passe a couvert les fichiers PHP
+n'a pas pu être tranché (§12.6). Cette passe a couvert les fichiers PHP
 contenant une logique substantielle (formulaires d'ordres, création de
 tables) ; les pages purement statiques (forum, authentification,
 présentation générale) n'ont pas
